@@ -1,0 +1,15 @@
+plugins {
+    id 'java-library'
+}
+
+group = 'yee.pltision'
+version = '1.0-SNAPSHOT'
+
+repositories {
+    mavenCentral()
+}
+
+dependencies {
+    // 注解处理器需要 JavaPoet
+    implementation 'com.palantir.javapoet:javapoet:0.17.0'
+}
