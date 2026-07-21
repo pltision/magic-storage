@@ -10,6 +10,12 @@ repositories {
 }
 
 dependencies {
-    // 注解处理器需要 JavaPoet
+    // 生成代码
     implementation 'com.palantir.javapoet:javapoet:0.17.0'
+
+    // 可选的Accessor
+    implementation "org.joml:joml:${jomlVersion}"
+
+    compileOnly "org.jetbrains:annotations:${annotationsVersion}"
+
 }
