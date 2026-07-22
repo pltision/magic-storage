@@ -4,12 +4,13 @@ import com.palantir.javapoet.*;
 import org.jetbrains.annotations.Nullable;
 import yee.pltision.soa.annotation.Field;
 import yee.pltision.soa.annotation.StructElementGlue;
-import yee.pltision.soa.joml.JomlGlue;
+import yee.pltision.soa.processor.spi.ElementGlueProvider;
 
 import javax.annotation.processing.*;
 import javax.lang.model.SourceVersion;
 import javax.lang.model.element.*;
 import javax.lang.model.type.TypeMirror;
+import javax.lang.model.util.ElementFilter;
 import javax.tools.Diagnostic;
 import java.io.IOException;
 import java.util.*;
@@ -20,20 +21,34 @@ import static java.util.Locale.ENGLISH;
 @SupportedAnnotationTypes("yee.pltision.soa.annotation.SoA")
 @SupportedSourceVersion(SourceVersion.RELEASE_17)
 public class SoAProcessor extends AbstractProcessor {
-    private Map<TypeName, FieldCodeBlock> elementMap;
+
+    // 缓存所有 SPI 提供者，键为 glue 类的 TypeMirror
+    private Map<TypeMirror, ElementGlueProvider> providerMap;
+
+    @Override
     public synchronized void init(ProcessingEnvironment processingEnv) {
         super.init(processingEnv);
+        providerMap = new HashMap<>();
         try {
-            // 强制加载并初始化 JomlGlue，触发静态块
-            Class<?> glueClass = Class.forName("yee.pltision.soa.joml.JomlGlue");
-            // 或者直接访问静态字段，也会触发初始化
-            // Field mapField = glueClass.getDeclaredField("ELEMENT_MAP");
-            // mapField.get(null);
+            ServiceLoader<ElementGlueProvider> loader =
+                    ServiceLoader.load(ElementGlueProvider.class, getClass().getClassLoader());
+            for (ElementGlueProvider provider : loader) {
+                // 获取 provider 实现类的 TypeMirror
+                TypeElement typeElem = processingEnv.getElementUtils()
+                        .getTypeElement(provider.getClass().getCanonicalName());
+                if (typeElem != null) {
+                    providerMap.put(typeElem.asType(), provider);
+                    processingEnv.getMessager().printMessage(Diagnostic.Kind.NOTE,
+                            "Loaded glue provider: " + provider.getClass().getName());
+                } else {
+                    processingEnv.getMessager().printMessage(Diagnostic.Kind.WARNING,
+                            "Cannot resolve TypeElement for provider: " + provider.getClass().getName());
+                }
+            }
         } catch (Throwable t) {
-            processingEnv.getMessager().printMessage(Diagnostic.Kind.ERROR,
-                    "JomlGlue initialization failed: " + t);
-            t.printStackTrace(); // 通常输出到控制台，可看到堆栈
-            throw new RuntimeException(t); // 可选，终止处理
+            processingEnv.getMessager().printMessage(Diagnostic.Kind.WARNING,
+                    "Failed to load element glue providers: " + t);
+            providerMap = Collections.emptyMap(); // 空而不是 null，便于后续检查
         }
     }
 
@@ -42,12 +57,7 @@ public class SoAProcessor extends AbstractProcessor {
         for (TypeElement annotation : annotations) {
             for (Element elem : roundEnv.getElementsAnnotatedWith(annotation)) {
                 if (elem.getKind() == ElementKind.RECORD) {
-                    try {
-                        generateStoreForRecord((TypeElement) elem);
-                    }
-                    catch (Throwable t){
-                        processingEnv.getMessager().printMessage(Diagnostic.Kind.ERROR, t.toString());
-                    }
+                    generateStoreForRecord((TypeElement) elem);
                 } else if (elem.getKind() == ElementKind.CLASS) {
                     // TODO: support class
                 } else {
@@ -85,18 +95,19 @@ public class SoAProcessor extends AbstractProcessor {
         }
 
         List<GroupInfo> groups = groupsOpt.get();
-        int fieldCount = components.size();
         ClassName recordClass = ClassName.get(recordElem);
 
         return generateStore(groups, recordClass, packageName, simpleName, storeName);
     }
+
+    // ------------------- 核心生成方法（未大变） -------------------
 
     private boolean generateStore(List<GroupInfo> groups,
                                   ClassName recordClass,
                                   String packageName,
                                   String simpleName,
                                   String storeName) {
-        // 1. 构建组规格（GroupSpec）列表
+        // 构建数组
         List<GroupSpec> groupSpecs = new ArrayList<>();
         for (GroupInfo group : groups) {
             String groupName = group.name();
@@ -104,14 +115,12 @@ public class SoAProcessor extends AbstractProcessor {
             TypeName elementType = group.type();
             ArrayTypeName arrayType = ArrayTypeName.of(elementType);
 
-            // 组大小常量名：groupName + "Size"
             String sizeConstName = groupName + "Size";
             FieldSpec sizeConst = FieldSpec.builder(int.class, sizeConstName)
                     .addModifiers(Modifier.PUBLIC, Modifier.STATIC, Modifier.FINAL)
                     .initializer("$L", fieldCount)
                     .build();
 
-            // 数组字段名：groupName + "Array"
             String arrayFieldName = groupName + "Array";
             FieldSpec arrayField = FieldSpec.builder(arrayType, arrayFieldName)
                     .addModifiers(Modifier.PUBLIC, Modifier.FINAL)
@@ -120,13 +129,12 @@ public class SoAProcessor extends AbstractProcessor {
             groupSpecs.add(new GroupSpec(groupName, elementType, fieldCount, sizeConstName, arrayFieldName, sizeConst, arrayField));
         }
 
-        // 2. 构建每个字段的规格（FieldSpecs）
+        // 构建字段 getter setter 等需要被调用的函数
         List<FieldSpecs> fieldSpecsList = new ArrayList<>();
         Map<FieldInfo, MethodSpec> fieldSetterMap = new LinkedHashMap<>();
         Map<FieldInfo, MethodSpec> fieldGetterMap = new LinkedHashMap<>();
 
         for (GroupSpec gSpec : groupSpecs) {
-            // 找到对应的 GroupInfo 以获取字段列表
             GroupInfo groupInfo = groups.stream()
                     .filter(g -> g.name().equals(gSpec.name))
                     .findFirst()
@@ -139,41 +147,32 @@ public class SoAProcessor extends AbstractProcessor {
                 TypeName fieldType = field.type();
                 String cap = capitalize(fieldName);
 
-                // 2.1 OFFSET 常量
                 String offsetConstName = fieldName.toUpperCase() + "_OFFSET";
                 FieldSpec offsetConst = FieldSpec.builder(int.class, offsetConstName)
                         .addModifiers(Modifier.PUBLIC, Modifier.STATIC, Modifier.FINAL)
                         .initializer("$L", offset)
                         .build();
 
-                // 2.2 SIZE 常量（固定为1）
                 String sizeConstName = fieldName.toUpperCase() + "_SIZE";
                 FieldSpec sizeConst = FieldSpec.builder(int.class, sizeConstName)
                         .addModifiers(Modifier.PUBLIC, Modifier.STATIC, Modifier.FINAL)
                         .initializer("$L", 1)
                         .build();
 
-                // 2.3 getter 方法（使用组大小常量修正索引计算）
                 MethodSpec getter = MethodSpec.methodBuilder("get" + cap)
                         .addModifiers(Modifier.PUBLIC)
                         .returns(fieldType)
                         .addParameter(int.class, "index")
                         .addStatement("return $N[index * $N + $N]",
-                                gSpec.arrayField,           // 数组字段
-                                gSpec.sizeConstName,        // 组大小常量
-                                offsetConstName)            // 偏移常量
+                                gSpec.arrayField, gSpec.sizeConstName, offsetConstName)
                         .build();
 
-                // 2.4 setter 方法
                 MethodSpec setter = MethodSpec.methodBuilder("set" + cap)
                         .addModifiers(Modifier.PUBLIC)
                         .addParameter(int.class, "index")
                         .addParameter(fieldType, fieldName)
                         .addStatement("$N[index * $N + $N] = $N",
-                                gSpec.arrayField,
-                                gSpec.sizeConstName,
-                                offsetConstName,
-                                fieldName)
+                                gSpec.arrayField, gSpec.sizeConstName, offsetConstName, fieldName)
                         .build();
 
                 FieldSpecs fSpec = new FieldSpecs(field, offsetConst, sizeConst, getter, setter);
@@ -185,22 +184,19 @@ public class SoAProcessor extends AbstractProcessor {
             }
         }
 
-        // 3. 开始构建类
+        // 构建类
         TypeSpec.Builder classBuilder = TypeSpec.classBuilder(ClassName.get(packageName, storeName))
                 .addModifiers(Modifier.PUBLIC, Modifier.FINAL);
 
-        // 3.1 添加 size 字段
         classBuilder.addField(FieldSpec.builder(int.class, "size")
                 .addModifiers(Modifier.PUBLIC, Modifier.FINAL)
                 .build());
 
-        // 3.2 添加所有组规格的常量和数组字段
         for (GroupSpec gSpec : groupSpecs) {
             classBuilder.addField(gSpec.sizeConst);
             classBuilder.addField(gSpec.arrayField);
         }
 
-        // 3.3 添加所有字段规格的常量和方法
         for (FieldSpecs fSpec : fieldSpecsList) {
             classBuilder.addField(fSpec.offsetConst);
             classBuilder.addField(fSpec.sizeConst);
@@ -208,7 +204,6 @@ public class SoAProcessor extends AbstractProcessor {
             classBuilder.addMethod(fSpec.setter);
         }
 
-        // 3.4 生成每个组的 setGroup 方法
         for (GroupSpec gSpec : groupSpecs) {
             GroupInfo groupInfo = groups.stream()
                     .filter(g -> g.name().equals(gSpec.name))
@@ -230,7 +225,7 @@ public class SoAProcessor extends AbstractProcessor {
             classBuilder.addMethod(groupSetter.build());
         }
 
-        // 3.5 构造函数
+        // 构造函数
         MethodSpec.Builder constructor = MethodSpec.constructorBuilder()
                 .addModifiers(Modifier.PUBLIC)
                 .addParameter(int.class, "size")
@@ -241,7 +236,7 @@ public class SoAProcessor extends AbstractProcessor {
         }
         classBuilder.addMethod(constructor.build());
 
-        // 3.6 get(int) 方法（按 constructIndex 顺序组装 Record）
+        // get(int)
         List<FieldInfo> allFields = groups.stream()
                 .flatMap(g -> g.fields().stream())
                 .sorted(Comparator.comparingInt(FieldInfo::constructIndex))
@@ -264,7 +259,7 @@ public class SoAProcessor extends AbstractProcessor {
         getElement.addCode(getBody.toString(), getArgs.toArray());
         classBuilder.addMethod(getElement.build());
 
-        // 3.7 set(int, Record) 方法
+        // set(int, Record)
         MethodSpec.Builder setElement = MethodSpec.methodBuilder("set")
                 .addModifiers(Modifier.PUBLIC)
                 .addParameter(int.class, "index")
@@ -276,16 +271,15 @@ public class SoAProcessor extends AbstractProcessor {
         }
         classBuilder.addMethod(setElement.build());
 
-        // 4. 写入文件
         JavaFile javaFile = JavaFile.builder(packageName, classBuilder.build())
                 .build();
         try {
             javaFile.writeTo(processingEnv.getFiler());
-            return false;
+            return true;
         } catch (IOException e) {
             processingEnv.getMessager().printMessage(Diagnostic.Kind.ERROR,
                     "Failed to generate store: " + e.getMessage());
-            return true;
+            return false;
         }
     }
 
@@ -305,14 +299,13 @@ public class SoAProcessor extends AbstractProcessor {
             group.fields().add(field);
         }
 
-
         if (multipleTypeGroups.isEmpty()) {
             return Optional.of(new ArrayList<>(groupMap.values()));
         }
 
         for (GroupInfo group : multipleTypeGroups) {
             StringBuilder error = new StringBuilder("Group " + group.name + " has multiple types: {\n");
-            for(FieldInfo field: group.fields){
+            for (FieldInfo field : group.fields) {
                 error.append("\t").append(field.type().toString())
                         .append(" ").append(field.name()).append(";\n");
             }
@@ -339,16 +332,17 @@ public class SoAProcessor extends AbstractProcessor {
                 String group = getGroupFromComponent(comp);
                 fields.add(new FieldInfo(name, type, group, i, fieldCodeBlock));
                 i++;
-            } catch (RuntimeException e) {
+            } catch (Throwable t) {   // 捕获所有异常，防止单个组件问题导致全盘崩溃
                 processingEnv.getMessager().printMessage(
                         Diagnostic.Kind.ERROR,
-                        "Error processing record component '" + comp.getSimpleName() + "':\n" + e,
+                        "Error processing record component '" + comp.getSimpleName() + "': " + t.getMessage(),
                         comp
                 );
+                t.printStackTrace();
                 hasError = true;
             }
         }
-        if(hasError){
+        if (hasError) {
             return Optional.empty();
         }
         return Optional.of(fields);
@@ -359,61 +353,100 @@ public class SoAProcessor extends AbstractProcessor {
         return fieldAnno != null ? fieldAnno.group() : "";
     }
 
-    private FieldCodeBlock getElementSpecsFromComponent(RecordComponentElement comp) throws RuntimeException{
-        StructElementGlue glue=getGlue(comp);
-        return glue == null ? null : getFromGlue(comp.asType(), glue);
+    private FieldCodeBlock getElementSpecsFromComponent(RecordComponentElement comp) throws RuntimeException {
+        GlueInfo glueInfo = getGlue(comp);
+        if (glueInfo == null) return null;
+        return getFromGlue(comp.asType(), glueInfo);
     }
 
-    private StructElementGlue getGlue(RecordComponentElement comp) throws RuntimeException{
-        List<?extends AnnotationMirror> annotations = comp.getAnnotationMirrors();
-
-        // 记录是否有多重注解
-        List<StructElementGlue> glues=new ArrayList<>();
-
-        {
-            StructElementGlue glue = comp.getAnnotation(StructElementGlue.class);
-            if (glue != null) {
-                glues.add(glue);
+    /**
+     * 通过 {@link AnnotationMirror} 提取 {@code StructElementGlue} 注解的属性。
+     * 避免直接调用 {@code glue()} 方法，防止 {@link javax.lang.model.type.MirroredTypeException}。
+     */
+    private GlueInfo getGlue(RecordComponentElement comp) throws RuntimeException {
+        List<GlueInfo> infos = new ArrayList<>();
+        for (AnnotationMirror am : comp.getAnnotationMirrors()) {
+            TypeMirror annoType = am.getAnnotationType();
+            TypeElement annoElement = (TypeElement) processingEnv.getTypeUtils().asElement(annoType);
+            if (annoElement.getQualifiedName().toString()
+                    .equals(StructElementGlue.class.getCanonicalName())) {
+                String mapFieldName = null;
+                TypeMirror glueTypeMirror = null;
+                for (Map.Entry<? extends ExecutableElement, ? extends AnnotationValue> entry :
+                        am.getElementValues().entrySet()) {
+                    String key = entry.getKey().getSimpleName().toString();
+                    if ("mapFieldName".equals(key)) {
+                        mapFieldName = (String) entry.getValue().getValue();
+                    } else if ("glue".equals(key)) {
+                        glueTypeMirror = (TypeMirror) entry.getValue().getValue();
+                    }
+                }
+                if (mapFieldName != null && glueTypeMirror != null) {
+                    infos.add(new GlueInfo(mapFieldName, glueTypeMirror));
+                }
             }
         }
-        for(AnnotationMirror anno: annotations){
-            // 手写语法糖让注解可以组合
-            StructElementGlue glue=anno.getAnnotationType().getAnnotation(StructElementGlue.class);
-            if (glue != null) {
-                glues.add(glue);
-            }
+
+        // 也检查直接注解（以防 AnnotationMirrors 中未包含，但通常会被包含，不过为了安全）
+        StructElementGlue direct = comp.getAnnotation(StructElementGlue.class);
+        if (direct != null && infos.isEmpty()) {
+            // 理论不会到这里，因为直接注解也会出现在 AnnotationMirrors 中
+            // 但为了防御，我们仍尝试通过反射获取 mapFieldName（但 glue 无法获取）
+            // 所以忽略此情况，报错
+            throw new RuntimeException("Direct @StructElementGlue found but no AnnotationMirror entry?");
         }
-        if(glues.size()==1){
-            return glues.getFirst();
-        }
-        if(glues.isEmpty()){
+
+        if (infos.isEmpty()) {
             return null;
         }
-        StringBuilder builder = new StringBuilder();
-        builder.append("Record component ").append(comp.getSimpleName()).append(" has multiple StructElementGlue annotations");
-        for (StructElementGlue glue : glues) {
-            builder.append("\n\tGlue: ").append(glue.glue().getName()).append(", mapFieldName: ").append(glue.mapFieldName());
+        if (infos.size() > 1) {
+            throw new RuntimeException("Multiple StructElementGlue annotations found on component " +
+                    comp.getSimpleName());
         }
-        throw new RuntimeException(builder.toString());
+        return infos.get(0);
     }
 
-    public static FieldCodeBlock getFromGlue(TypeMirror type, StructElementGlue structElementGlue) throws RuntimeException{
-        java.lang.reflect.Field field;
-        try {
-            field = structElementGlue.glue().getField(structElementGlue.mapFieldName());
-        } catch (NoSuchFieldException e) {
-            throw new RuntimeException("Cannot find field " + structElementGlue.mapFieldName() + " in " + structElementGlue.glue().getName()+"\n"+e);
+    /**
+     * 根据 glue 类型查找对应的 {@link ElementGlueProvider}，再从 provider 中查询字段类型的映射。
+     */
+    private FieldCodeBlock getFromGlue(TypeMirror fieldType, GlueInfo glueInfo) throws RuntimeException {
+        if (providerMap == null || providerMap.isEmpty()) {
+            throw new RuntimeException("No glue providers available. " +
+                    "Make sure you have added the corresponding glue library (e.g., JomlGlue) " +
+                    "to the annotation processor classpath.");
         }
-        try {
-            FieldCodeBlock fieldCodeBlock =((Map<TypeName, FieldCodeBlock>) field.get(null)).get(TypeName.get(type));
-            if (fieldCodeBlock==null)
-                throw new RuntimeException("Field " + structElementGlue.mapFieldName() + " in " + structElementGlue.glue().getName() + " does not contain a mapping for type " + type);
-            return fieldCodeBlock;
-        } catch (IllegalAccessException e) {
-            throw new RuntimeException("Cannot access field " + structElementGlue.mapFieldName() + " in " + structElementGlue.glue().getName());
-        } catch (ClassCastException e){
-            throw new RuntimeException("Field " + structElementGlue.mapFieldName() + " in " + structElementGlue.glue().getName() + " is not of type Map<Class<?>, FieldCodeBlock>");
+
+        // 获取 glue 类的全限定名
+        String glueClassName = ((TypeElement) processingEnv.getTypeUtils().asElement(glueInfo.glueType()))
+                .getQualifiedName().toString();
+
+        // 在 providerMap 中查找匹配的 provider
+        ElementGlueProvider provider = null;
+        for (Map.Entry<TypeMirror, ElementGlueProvider> entry : providerMap.entrySet()) {
+            TypeElement providerElement = (TypeElement) processingEnv.getTypeUtils().asElement(entry.getKey());
+            if (providerElement.getQualifiedName().toString().equals(glueClassName)) {
+                provider = entry.getValue();
+                break;
+            }
         }
+
+        if (provider == null) {
+            throw new RuntimeException("No provider found for glue class: " + glueClassName +
+                    ". Please include the corresponding glue library and ensure it is registered via ServiceLoader.");
+        }
+
+        Map<TypeName, FieldCodeBlock> glueMap = provider.getElementMap();
+        if (glueMap == null) {
+            throw new RuntimeException("Provider " + glueClassName + " returned null map");
+        }
+
+        TypeName key = TypeName.get(fieldType);
+        FieldCodeBlock block = glueMap.get(key);
+        if (block == null) {
+            throw new RuntimeException("No mapping for type " + fieldType +
+                    " in glue " + glueClassName + ". Supported types: " + glueMap.keySet());
+        }
+        return block;
     }
 
     private static String capitalize(String name) {
@@ -421,15 +454,14 @@ public class SoAProcessor extends AbstractProcessor {
         return name.substring(0, 1).toUpperCase(ENGLISH) + name.substring(1);
     }
 
+    // ------------------- 内部数据类 -------------------
 
-    // 输入处理
     private record FieldInfo(String name, TypeName type, String group, int constructIndex, @Nullable FieldCodeBlock specs) {
     }
 
     private record GroupInfo(String name, TypeName type, List<FieldInfo> fields) {
     }
 
-    // 输出
     private record GroupSpec(String name, TypeName elementType, int fieldCount,
                              String sizeConstName, String arrayFieldName,
                              FieldSpec sizeConst, FieldSpec arrayField) {
@@ -440,5 +472,8 @@ public class SoAProcessor extends AbstractProcessor {
                               FieldSpec sizeConst,
                               MethodSpec getter,
                               MethodSpec setter) {
+    }
+
+    private record GlueInfo(String mapFieldName, TypeMirror glueType) {
     }
 }

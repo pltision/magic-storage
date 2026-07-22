@@ -1,8 +1,10 @@
 package yee.pltision.soa.joml;
 
-import com.palantir.javapoet.*;
+import com.palantir.javapoet.TypeName;
+import com.palantir.javapoet.CodeBlock;
 import org.joml.*;
 import yee.pltision.soa.processor.FieldCodeBlock;
+import yee.pltision.soa.processor.spi.ElementGlueProvider;
 
 import java.lang.reflect.Field;
 import java.util.ArrayList;
@@ -11,14 +13,20 @@ import java.util.Map;
 import java.util.stream.Stream;
 
 // Hey guys, I think I found a glue!
-public class JomlGlue {
+public class JomlGlue implements ElementGlueProvider {
+
     public static final Map<TypeName, FieldCodeBlock> ELEMENT_MAP = create();
+
+    @Override
+    public Map<TypeName, FieldCodeBlock> getElementMap() {
+        return ELEMENT_MAP;
+    }
 
     public static Map<TypeName, FieldCodeBlock> create() {
         List<Class<?>> jomlClasses = Stream.of(
                 AxisAngle4d.class,
                 AxisAngle4f.class,
-                ConfigurationException.class,
+                // 注意：删除了 Double.class（之前错误添加）
                 FrustumIntersection.class,
                 FrustumRayBuilder.class,
                 GeometryUtils.class,
@@ -91,56 +99,26 @@ public class JomlGlue {
                 Vector4i.class,
                 Vector4ic.class
         )
-                //只保留数值类型，很合理
+                // 只保留数值类型（以 f/d/i/L 结尾）
                 .filter(clazz -> {
-                    String name=clazz.getSimpleName();
-                    return name.endsWith("f")||name.endsWith("d")||name.endsWith("i")||name.endsWith("L");
-                }).toList();
+                    String name = clazz.getSimpleName();
+                    return name.endsWith("f") || name.endsWith("d") || name.endsWith("i") || name.endsWith("L");
+                })
+                .toList();
 
-        jomlClasses.forEach(clazz -> {
-            System.out.println(clazz.getSimpleName());
-        });
+        // （可选）打印调试信息
+        jomlClasses.forEach(clazz -> System.out.println(clazz.getSimpleName()));
 
         Map<TypeName, FieldCodeBlock> elementMap = new java.util.HashMap<>();
-
-        jomlClasses.forEach(clazz -> elementMap.put(TypeName.get(clazz), createElementSpecs(clazz)));
-
+        for (Class<?> clazz : jomlClasses) {
+            elementMap.put(TypeName.get(clazz), createElementSpecs(clazz));
+        }
         return elementMap;
-
-
     }
 
-    public static FieldCodeBlock createElementSpecs(Class<?> clazz) {
+    private static FieldCodeBlock createElementSpecs(Class<?> clazz) {
         Class<?> dataType = getTypeFromName(clazz.getSimpleName());
-/*
-        MethodSpec getArray = MethodSpec.methodBuilder("getArray")
-                .addModifiers(Modifier.PRIVATE, Modifier.STATIC)
-                .addParameter(ClassName.get(clazz), "element")
-                .addParameter(ArrayTypeName.of(TypeName.get(dataType).unbox()), "array")
-                .addParameter(TypeName.INT, "offset")
-                .addStatement("element.get($N, $N)", "array", "offset")
-                .build();
-
-        MethodSpec setArray = MethodSpec.methodBuilder("setArray")
-                .addModifiers(Modifier.PRIVATE, Modifier.STATIC)
-                .addParameter(ClassName.get(clazz), "element")
-                .addParameter(ArrayTypeName.of(TypeName.get(dataType).unbox()), "array")
-                .addParameter(TypeName.INT, "offset")
-                .addStatement("element.set($N, $N)", "array", "offset")
-                .build();
-
-        MethodSpec arrayConstruct = MethodSpec.methodBuilder("arrayConstruct")
-                .addModifiers(Modifier.PRIVATE, Modifier.STATIC)
-                .addParameter(ArrayTypeName.of(TypeName.get(dataType).unbox()), "array")
-                .addParameter(TypeName.INT, "offset")
-                .addStatement("return new $T($N, $N)", clazz, "array", "offset")
-                .build();
-*/
         String[] args = getArgs(clazz);
-
-//        int size= args.length;
-
-//        return new ElementSpecs(TypeName.get(dataType), size, getArray, arrayConstruct, setArray);
 
         CodeBlock getAsArray = CodeBlock.builder()
                 .addStatement("$N.get($N, $N)", "field", "array", "offset")
@@ -154,49 +132,36 @@ public class JomlGlue {
                 .addStatement("$N.set($N, $N)", "dist", "array", "offset")
                 .build();
 
-
-        return new FieldCodeBlock(TypeName.get(dataType).unbox(), args,
-                getAsArray, constructFromArray, setFromArray
+        return new FieldCodeBlock(
+                TypeName.get(dataType).unbox(),
+                args,
+                getAsArray,
+                constructFromArray,
+                setFromArray
         );
     }
 
-    public static Class<? extends Number> getTypeFromName(String name){
-        if(name.endsWith("f")){
+    private static Class<? extends Number> getTypeFromName(String name) {
+        if (name.endsWith("f")) {
             return Float.class;
-        }else if(name.endsWith("d")){
+        } else if (name.endsWith("d")) {
             return Double.class;
-        }else if(name.endsWith("i")){
+        } else if (name.endsWith("i")) {
             return Integer.class;
-        }else if(name.endsWith("L")){
+        } else if (name.endsWith("L")) {
             return Long.class;
-        }else{
-            throw new IllegalArgumentException("Unknown type: "+name);
+        } else {
+            throw new IllegalArgumentException("Unknown type: " + name);
         }
-
     }
 
-    public static String[] getArgs(Class<?> clazz) {
-        List<String> args=new ArrayList<>(16);
-        for (Field field: clazz.getFields()){
-            if (!java.lang.reflect.Modifier.isStatic(field.getType().getModifiers())) {
+    private static String[] getArgs(Class<?> clazz) {
+        List<String> args = new ArrayList<>(16);
+        for (Field field : clazz.getFields()) {
+            if (!java.lang.reflect.Modifier.isStatic(field.getModifiers())) {
                 args.add(field.getName());
             }
         }
-
         return args.toArray(new String[0]);
-    }
-
-    public static int sizeFromName(String name) {
-        return switch (name) {
-            case "Vector2f", "Vector2d", "Vector2i", "Vector2L" -> 2;
-            case "Vector3f", "Vector3d", "Vector3i", "Vector3L" -> 3;
-            case "Vector4f", "Vector4d", "Vector4i", "Vector4L" -> 4;
-            case "Matrix2f", "Matrix2d" -> 4;
-            case "Matrix3f", "Matrix3d" -> 9;
-            case "Matrix4f", "Matrix4d" -> 16;
-            case "Quaternionf", "Quaterniond" -> 4;
-            case "AxisAngle4f", "AxisAngle4d" -> 4;
-            default -> throw new IllegalArgumentException("Unknown class: " + name);
-        };
     }
 }
