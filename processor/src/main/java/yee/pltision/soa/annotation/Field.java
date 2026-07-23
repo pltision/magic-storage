@@ -9,5 +9,7 @@ import java.lang.annotation.Target;
 @Retention(RetentionPolicy.SOURCE)
 public @interface Field {
     String group();
-//    Class<?> accessor();
+
+    // 我不想做
+//    String groupUpperSnake() default "";
 }

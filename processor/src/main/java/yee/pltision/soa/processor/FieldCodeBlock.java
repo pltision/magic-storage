@@ -3,12 +3,12 @@ package yee.pltision.soa.processor;
 import com.palantir.javapoet.CodeBlock;
 import com.palantir.javapoet.TypeName;
 
-public record FieldCodeBlock(TypeName type, String[] args,
+public record FieldCodeBlock(TypeName dataType, TypeName fliedType, String[] args,
                              // array offset field
-                             CodeBlock getAsArray,
+                             String getAsArray,
                              // array offset
-                             CodeBlock constructFromArray,
+                             String constructFromArray,
                              // array offset dist
-                             CodeBlock setFromArray
+                             String setFromArray
 ) {
 }

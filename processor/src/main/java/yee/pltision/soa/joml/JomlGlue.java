@@ -120,20 +120,15 @@ public class JomlGlue implements ElementGlueProvider {
         Class<?> dataType = getTypeFromName(clazz.getSimpleName());
         String[] args = getArgs(clazz);
 
-        CodeBlock getAsArray = CodeBlock.builder()
-                .addStatement("$N.get($N, $N)", "field", "array", "offset")
-                .build();
+        String getAsArray = "$N.get($N, $N);";
 
-        CodeBlock constructFromArray = CodeBlock.builder()
-                .addStatement("return new $T($N, $N)", clazz, "array", "offset")
-                .build();
+        String constructFromArray = "return new $T($N, $N)";
 
-        CodeBlock setFromArray = CodeBlock.builder()
-                .addStatement("$N.set($N, $N)", "dist", "array", "offset")
-                .build();
+        String setFromArray = "return $N.set($N, $N)";
 
         return new FieldCodeBlock(
                 TypeName.get(dataType).unbox(),
+                TypeName.get(clazz),
                 args,
                 getAsArray,
                 constructFromArray,
