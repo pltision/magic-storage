@@ -99,15 +99,14 @@ public class JomlGlue implements ElementGlueProvider {
                 Vector4i.class,
                 Vector4ic.class
         )
-                // 只保留数值类型（以 f/d/i/L 结尾）
+                // 只保留数值类型（以 f/d/i/L 结尾），很合理
                 .filter(clazz -> {
                     String name = clazz.getSimpleName();
                     return name.endsWith("f") || name.endsWith("d") || name.endsWith("i") || name.endsWith("L");
                 })
                 .toList();
 
-        // （可选）打印调试信息
-        jomlClasses.forEach(clazz -> System.out.println(clazz.getSimpleName()));
+//        jomlClasses.forEach(clazz -> System.out.println(clazz.getSimpleName()));
 
         Map<TypeName, FieldCodeBlock> elementMap = new java.util.HashMap<>();
         for (Class<?> clazz : jomlClasses) {
@@ -136,6 +135,7 @@ public class JomlGlue implements ElementGlueProvider {
         );
     }
 
+    // 直接通过名字查类型，也很合理
     private static Class<? extends Number> getTypeFromName(String name) {
         if (name.endsWith("f")) {
             return Float.class;

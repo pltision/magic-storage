@@ -18,7 +18,7 @@ dependencies {
 
     compileOnly "org.jetbrains:annotations:${annotationsVersion}"
 
-    // 字符串处理
-    compileOnly 'cn.hutool:hutool-all:5.8.47'
+    // 字符串处理，不会传递依赖
+    implementation 'cn.hutool:hutool-all:5.8.47'
 
 }
