@@ -1,7 +1,6 @@
 package yee.pltision.soa.joml;
 
 import com.palantir.javapoet.TypeName;
-import com.palantir.javapoet.CodeBlock;
 import org.joml.*;
 import yee.pltision.soa.processor.FieldCodeBlock;
 import yee.pltision.soa.processor.spi.ElementGlueProvider;
