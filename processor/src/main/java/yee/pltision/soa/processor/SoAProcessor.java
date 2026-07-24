@@ -207,7 +207,7 @@ public class SoAProcessor extends AbstractProcessor {
                             .addModifiers(Modifier.PUBLIC)
                             .addParameter(int.class, indexName)
                             .returns(fieldType)
-                            .addStatement(field.code.constructFromArray(), field.filedType, gSpec.arrayField,
+                            .addCode(field.code.constructFromArray(), field.filedType, gSpec.arrayField,
                                     CodeBlock.of("$N * $N + $N", indexName, gSpec.sizeField, offsetConstName).toString())
                             .build();
 
@@ -218,7 +218,7 @@ public class SoAProcessor extends AbstractProcessor {
                             .addParameter(int.class, indexName)
                             .addParameter(fieldType, destName)
                             .returns(fieldType)
-                            .addStatement(field.code.setFromArray(), destName, gSpec.arrayField,
+                            .addCode(field.code.setFromArray(), destName, gSpec.arrayField,
                                     CodeBlock.of("$N * $N + $N", indexName, gSpec.sizeField, offsetConstName).toString())
                             .build();
 
@@ -227,7 +227,7 @@ public class SoAProcessor extends AbstractProcessor {
                             .addModifiers(Modifier.PUBLIC)
                             .addParameter(int.class, indexName)
                             .addParameter(fieldType, fieldName)
-                            .addStatement(field.code.getAsArray(),
+                            .addCode(field.code.getAsArray(),
                                     fieldName,
                                     gSpec.arrayField,
                                     CodeBlock.of("$N * $N + $N", indexName, gSpec.sizeField, offsetConstName).toString())

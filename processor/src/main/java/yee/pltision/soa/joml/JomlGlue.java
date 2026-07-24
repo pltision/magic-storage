@@ -25,7 +25,6 @@ public class JomlGlue implements ElementGlueProvider {
         List<Class<?>> jomlClasses = Stream.of(
                 AxisAngle4d.class,
                 AxisAngle4f.class,
-                // 注意：删除了 Double.class（之前错误添加）
                 FrustumIntersection.class,
                 FrustumRayBuilder.class,
                 GeometryUtils.class,
@@ -120,9 +119,9 @@ public class JomlGlue implements ElementGlueProvider {
 
         String getAsArray = "$N.get($N, $N);";
 
-        String constructFromArray = "return new $T($N, $N)";
+        String constructFromArray = "return new $T($N, $N);";
 
-        String setFromArray = "return $N.set($N, $N)";
+        String setFromArray = "return $N.set($N, $N);";
 
         return new FieldCodeBlock(
                 TypeName.get(dataType).unbox(),
