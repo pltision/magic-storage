@@ -208,7 +208,7 @@ public class SoAProcessor extends AbstractProcessor {
                             .addParameter(int.class, indexName)
                             .returns(fieldType)
                             .addCode(field.code.constructFromArray(), field.filedType, gSpec.arrayField,
-                                    CodeBlock.of("$N * $N + $N", indexName, gSpec.sizeField, offsetConstName).toString())
+                                    CodeBlock.of("($N * $N + $N)", indexName, gSpec.sizeField, offsetConstName).toString())
                             .build();
 
                     String destName="dest";
@@ -219,7 +219,7 @@ public class SoAProcessor extends AbstractProcessor {
                             .addParameter(fieldType, destName)
                             .returns(fieldType)
                             .addCode(field.code.setFromArray(), destName, gSpec.arrayField,
-                                    CodeBlock.of("$N * $N + $N", indexName, gSpec.sizeField, offsetConstName).toString())
+                                    CodeBlock.of("($N * $N + $N)", indexName, gSpec.sizeField, offsetConstName).toString())
                             .build();
 
                     // F setField(int index, F field)
@@ -230,7 +230,7 @@ public class SoAProcessor extends AbstractProcessor {
                             .addCode(field.code.getAsArray(),
                                     fieldName,
                                     gSpec.arrayField,
-                                    CodeBlock.of("$N * $N + $N", indexName, gSpec.sizeField, offsetConstName).toString())
+                                    CodeBlock.of("($N * $N + $N)", indexName, gSpec.sizeField, offsetConstName).toString())
                             .build();
 
                     // F setField(int index, float... data)
