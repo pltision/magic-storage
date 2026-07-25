@@ -1,13 +1,13 @@
 package yee.pltision.soa.annotation;
 
-import yee.pltision.soa.joml.JomlGlue;
+import yee.pltision.soa.joml.JomlGlueGenerator;
 
 import java.lang.annotation.*;
 
 @Target({ElementType.TYPE, ElementType.FIELD, ElementType.RECORD_COMPONENT, ElementType.ANNOTATION_TYPE})
 @Retention(RetentionPolicy.SOURCE)
 @Repeatable(Glue.Glues.class)
-@StructElementGlue(glue = JomlGlue.class)
+@StructElementGlue(glue = JomlGlueGenerator.class)
 public @interface Glue {
 
     /**

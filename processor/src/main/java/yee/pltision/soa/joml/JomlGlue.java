@@ -1,6 +1,5 @@
 package yee.pltision.soa.joml;
 
-import com.palantir.javapoet.AnnotationSpec;
 import com.palantir.javapoet.TypeName;
 import org.joml.*;
 import yee.pltision.soa.processor.FieldCodeBlock;
@@ -13,6 +12,10 @@ import java.util.Map;
 import java.util.stream.Stream;
 
 // Hey guys, I think I found a glue!
+
+/**
+ * 生成@Joml
+ */
 public class JomlGlue implements ElementGlueProvider {
 
     public static final Map<TypeName, FieldCodeBlock> ELEMENT_MAP = create();
@@ -109,12 +112,12 @@ public class JomlGlue implements ElementGlueProvider {
 
         Map<TypeName, FieldCodeBlock> elementMap = new java.util.HashMap<>();
         for (Class<?> clazz : jomlClasses) {
-            elementMap.put(TypeName.get(clazz), createAnnotation(clazz));
+            elementMap.put(TypeName.get(clazz), createElementSpecs(clazz));
         }
         return elementMap;
     }
 
-    private static AnnotationSpec createAnnotation(Class<?> clazz) {
+    private static FieldCodeBlock createElementSpecs(Class<?> clazz) {
         Class<?> dataType = getTypeFromName(clazz.getSimpleName());
         String[] args = getArgs(clazz);
 
