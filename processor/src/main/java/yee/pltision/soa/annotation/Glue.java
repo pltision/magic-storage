@@ -38,7 +38,7 @@ public @interface Glue {
     String getFieldToDest() default "return $N.set($N, $N);";
 
     /**
-     * <p>F setField(int index, F field)</p>
+     * <p>void setField(int index, F field)</p>
      * <p>Argument: field array (index * groupSize + offset)</p>
      */
     String setField() default "$N.get($N, $N);";

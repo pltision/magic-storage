@@ -42,3 +42,6 @@ bin/
 
 ### Mac OS ###
 .DS_Store
+
+# 这个文件用 yee.pltision.soa.joml.JomlGlueGenerator 生成
+/processor/src/main/java/yee/pltision/soa/annotation/Joml.java
