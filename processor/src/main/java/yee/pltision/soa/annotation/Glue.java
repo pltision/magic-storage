@@ -1,20 +1,22 @@
 package yee.pltision.soa.annotation;
 
-import yee.pltision.soa.joml.JomlGlueGenerator;
-
 import java.lang.annotation.*;
 
 @Target({ElementType.TYPE, ElementType.FIELD, ElementType.RECORD_COMPONENT, ElementType.ANNOTATION_TYPE})
 @Retention(RetentionPolicy.SOURCE)
 @Repeatable(Glue.Glues.class)
-@StructElementGlue(glue = JomlGlueGenerator.class)
 public @interface Glue {
 
     /**
      *
-     * @return 胶水可以匹配的类型。一般我会把一堆胶水写进一个注解，让处理器自己选
+     * @return 胶水可以匹配的类型。一般我会把一堆胶水写进一个注解，让处理器自己选。
      */
-    Class<?> type() default Object.class;
+    Class<?> targetType() default Object.class;
+
+    /**
+     * @return 构成组件的类型。如果能转换成原初类型则会自动转换，否则保留原类型。
+     */
+    Class<?> dataType();
 
     /**
      * @return 组件的所有字段，如果为空自动扫描 <code>public static</code> 字段
@@ -26,25 +28,25 @@ public @interface Glue {
 
     /**
      * <p>F getField(int index)</p>
-     * <p>Argument: field array (index * groupSize + offset)</p>
+     * <p>Argument: field array, (index * groupSize + offset)</p>
      */
-    String getField() default "return new $T($N, $N);";
+    String getField() default "return new $T($N, $L);";
 
     /**
      * <p>F getField(int index, F dest)</p>
-     * <p>Argument: dest array (index * groupSize + offset)</p>
+     * <p>Argument: dest, field array, (index * groupSize + offset)</p>
      * @return 如果为<code>""</code>，则不生成此方法
      */
-    String getFieldToDest() default "return $N.set($N, $N);";
+    String getFieldToDest() default "return $N.set($N, $L);";
 
     /**
      * <p>void setField(int index, F field)</p>
-     * <p>Argument: field array (index * groupSize + offset)</p>
+     * <p>Argument: field, field array, (index * groupSize + offset)</p>
      */
-    String setField() default "$N.get($N, $N);";
+    String setField() default "$N.get($N, $L);";
 
     @Target({ElementType.TYPE, ElementType.FIELD, ElementType.RECORD_COMPONENT, ElementType.ANNOTATION_TYPE})
-    @Retention(RetentionPolicy.SOURCE)
+    @Retention(RetentionPolicy.CLASS)
     @interface Glues {
         Glue[] value();
     }

@@ -15,7 +15,7 @@ project.ext.annotationsVersion = "24.0.1"
 dependencies {
     implementation project(':processor')
     annotationProcessor project(':processor')
-    // ★ 关键：为测试编译声明注解处理器依赖
+
     testAnnotationProcessor project(':processor')
 
     testImplementation platform('org.junit:junit-bom:6.0.0')
