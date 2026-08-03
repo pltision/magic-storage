@@ -6,12 +6,14 @@ import org.jetbrains.annotations.Nullable;
 import yee.pltision.soa.annotation.Field;
 import yee.pltision.soa.annotation.Glue;
 import yee.pltision.soa.annotation.SoA;
-import yee.pltision.soa.processor.spi.ElementGlueProvider;
+import yee.pltision.soa.compoundsource.MutableClassSource;
 
 import javax.annotation.processing.*;
 import javax.lang.model.AnnotatedConstruct;
 import javax.lang.model.SourceVersion;
 import javax.lang.model.element.*;
+import javax.lang.model.type.DeclaredType;
+import javax.lang.model.type.TypeKind;
 import javax.lang.model.type.TypeMirror;
 import javax.tools.Diagnostic;
 import java.io.IOException;
@@ -22,37 +24,7 @@ import java.util.stream.Collectors;
 @SupportedSourceVersion(SourceVersion.RELEASE_21)
 public class SoAProcessor extends AbstractProcessor {
 
-    private final ClassName annotationClassName = ClassName.get(SoA.class);
-
-    // 缓存所有 SPI 提供者，键为 glue 类的 TypeMirror
-    private Map<TypeMirror, ElementGlueProvider> providerMap;
-
-    @Override
-    public synchronized void init(ProcessingEnvironment processingEnv) {
-        super.init(processingEnv);
-        providerMap = new HashMap<>();
-        try {
-            ServiceLoader<ElementGlueProvider> loader =
-                    ServiceLoader.load(ElementGlueProvider.class, getClass().getClassLoader());
-            for (ElementGlueProvider provider : loader) {
-                // 获取 provider 实现类的 TypeMirror
-                TypeElement typeElem = processingEnv.getElementUtils()
-                        .getTypeElement(provider.getClass().getCanonicalName());
-                if (typeElem != null) {
-                    providerMap.put(typeElem.asType(), provider);
-//                    processingEnv.getMessager().printMessage(Diagnostic.Kind.NOTE,
-//                            "Loaded glue provider: " + provider.getClass().getName());
-                } else {
-                    processingEnv.getMessager().printMessage(Diagnostic.Kind.WARNING,
-                            "Cannot resolve TypeElement for provider: " + provider.getClass().getName());
-                }
-            }
-        } catch (Throwable t) {
-            processingEnv.getMessager().printMessage(Diagnostic.Kind.WARNING,
-                    "Failed to load element glue providers: " + t);
-            providerMap = Collections.emptyMap(); // 空而不是 null，便于后续检查
-        }
-    }
+    public static final ClassName ANNOTATION_CLASS_NAME = ClassName.get(SoA.class);
 
     @Override
     public boolean process(Set<? extends TypeElement> annotations, RoundEnvironment roundEnv) {
@@ -71,7 +43,7 @@ public class SoAProcessor extends AbstractProcessor {
                     // TODO: support class
                 } else {
                     processingEnv.getMessager().printMessage(Diagnostic.Kind.ERROR,
-                            "@" + annotationClassName.simpleName() + " can only be used on Record or Class", elem);
+                            "@" + ANNOTATION_CLASS_NAME.simpleName() + " can only be used on Record or Class", elem);
                 }
             }
         }
@@ -86,7 +58,7 @@ public class SoAProcessor extends AbstractProcessor {
         List<? extends RecordComponentElement> components = recordElem.getRecordComponents();
         if (components.isEmpty()) {
             processingEnv.getMessager().printMessage(Diagnostic.Kind.WARNING,
-                    "No record components found for @" + annotationClassName.simpleName(), recordElem);
+                    "No record components found for @" + ANNOTATION_CLASS_NAME.simpleName(), recordElem);
             return false;
         }
 
@@ -265,9 +237,9 @@ public class SoAProcessor extends AbstractProcessor {
         TypeSpec.Builder classBuilder = TypeSpec.classBuilder(ClassName.get(packageName, storeName))
                 .addModifiers(Modifier.PUBLIC, Modifier.FINAL)
                 .addJavadoc("Generate by $T with @$N\n",
-                        ClassName.get(packageName,simpleName), annotationClassName.simpleName()
+                        ClassName.get(packageName,simpleName), ANNOTATION_CLASS_NAME.simpleName()
                 )
-                .addJavadoc("@see $N\n", annotationClassName.toString())    //显示全名
+                .addJavadoc("@see $N\n", ANNOTATION_CLASS_NAME.toString())    //显示全名
                 .addJavadoc("@see $T\n", ClassName.get(packageName,simpleName))
                 ;
 
@@ -398,12 +370,12 @@ public class SoAProcessor extends AbstractProcessor {
         }
 
         for (GroupInfo group : multipleTypeGroups) {
-            StringBuilder error = new StringBuilder("Group " + group.name + " has multiple types: {\n");
+            StringBuilder error = new StringBuilder("Group " + group.name + " has multiple types: \n");
             for (FieldInfo field : group.fields) {
                 error.append("\t").append(field.dataType.toString())
                         .append(" ").append(field.name()).append(";\n");
             }
-            error.append("}");
+//            error.append("");
             processingEnv.getMessager().printMessage(Diagnostic.Kind.ERROR, error.toString());
         }
         return Optional.empty();
@@ -416,22 +388,25 @@ public class SoAProcessor extends AbstractProcessor {
         for (RecordComponentElement comp : components) {
             try {
                 String name = comp.getSimpleName().toString();
-                FieldCodeBlock fieldCodeBlock = getElementSpecsFromComponent(comp, comp.asType());
+                CompoundSourceCode compoundSourceCode = getCodeBlockFromGlue(comp, comp.asType());
+                if (compoundSourceCode == null) {
+                    compoundSourceCode = getCodeBlockFromMutableClassSource(comp.asType());
+                }
                 TypeName dataType;
                 int dataLength;
                 TypeName fieldType;
-                if (fieldCodeBlock == null) {
+                if (compoundSourceCode == null) {
                     dataType = TypeName.get(comp.asType());
                     fieldType = dataType;
                     dataLength = 1;
                 } else {
-                    dataType = fieldCodeBlock.dataType();
-                    fieldType = fieldCodeBlock.fliedType();
+                    dataType = compoundSourceCode.dataType();
+                    fieldType = compoundSourceCode.fliedType();
                     //args就是标量
-                    dataLength = fieldCodeBlock.args().length;
+                    dataLength = compoundSourceCode.args().length;
                 }
                 String group = getGroupFromComponent(comp);
-                fields.add(new FieldInfo(name, dataType, dataLength, fieldType, group, i, fieldCodeBlock));
+                fields.add(new FieldInfo(name, dataType, dataLength, fieldType, group, i, compoundSourceCode));
                 i++;
             } catch (RuntimeException t) {   // 捕获能得出信息的异常
                 processingEnv.getMessager().printMessage(
@@ -454,7 +429,7 @@ public class SoAProcessor extends AbstractProcessor {
         return fieldAnno != null ? fieldAnno.group() : "";
     }
 
-    private FieldCodeBlock getElementSpecsFromComponent(AnnotatedConstruct comp, TypeMirror compClass) throws RuntimeException {
+    private CompoundSourceCode getCodeBlockFromGlue(AnnotatedConstruct comp, TypeMirror compType) throws RuntimeException {
         List<AnnotationMirror> glueMirrors = new ArrayList<>();
 
         // 递归查找所有 @Glue 注解：先查当前元素的注解，再查注解本身的元注解
@@ -512,12 +487,12 @@ public class SoAProcessor extends AbstractProcessor {
             } catch (IllegalArgumentException ignore) {
             }
 
-            if (processingEnv.getTypeUtils().isSubtype(compClass, targetType)) {
+            if (processingEnv.getTypeUtils().isSubtype(compType, targetType)) {
                 String[] args = getAnnotationStringArray(glueMirror, "args");
                 String getField = getAnnotationString(glueMirror, "getField", "return new $T($N, $N);");
                 String getFieldToDest = getAnnotationString(glueMirror, "getFieldToDest", "return $N.set($N, $N);");
                 String setField = getAnnotationString(glueMirror, "setField", "$N.get($N, $N);");
-                return new FieldCodeBlock(TypeName.get(dataType), TypeName.get(compClass),
+                return new CompoundSourceCode(TypeName.get(dataType), TypeName.get(compType),
                         args, getField, getFieldToDest, setField);
             }
         }
@@ -556,10 +531,140 @@ public class SoAProcessor extends AbstractProcessor {
         return defaultValue;
     }
 
+    private CompoundSourceCode getCodeBlockFromMutableClassSource(TypeMirror type){
+        if(type.getKind() != TypeKind.DECLARED)
+            return null;
+
+        if(((DeclaredType)type).asElement().getAnnotation(MutableClassSource.class)==null)
+            return null;
+
+
+
+        List<TypeElement> inheritances = new ArrayList<>();
+        {
+            TypeElement clazz = (TypeElement) ((DeclaredType)type).asElement();
+            inheritances.add(clazz);
+            w:
+            while (true) {
+                TypeMirror e = clazz.getSuperclass();
+
+                switch (e.getKind()) {
+                    case DECLARED -> inheritances.add(clazz = (TypeElement) ((DeclaredType) e).asElement());
+                    case NONE -> {break w;}
+                    default -> throw new IllegalArgumentException();
+                }
+
+            }
+        }
+
+        //允许继承应该没啥问题
+
+//        if(inheritances.size()!=2){
+//            processingEnv.getMessager().printMessage(
+//                    Diagnostic.Kind.ERROR,
+//                    "@"+MutableClassSource.class.getSimpleName()+" "+type+" can only extends "+Object.class+"!"
+//            );
+//        }
+
+        List<VariableElement> elements=new ArrayList<>();
+
+        for(int i=inheritances.size()-1; i>=0; i--){
+            TypeElement clazz = inheritances.get(i);
+            elements.addAll(
+                    clazz.getEnclosedElements().stream()
+                            .filter(e->e.getKind()==ElementKind.FIELD)
+                            .map(e->(VariableElement) e)
+                            .filter(e->
+                                    e.getModifiers().contains(Modifier.PUBLIC)
+                               && ! e.getModifiers().contains(Modifier.FINAL)
+                            )
+                            .toList()
+            );
+        }
+
+
+        // 但是不处理套娃了
+
+        if(elements.isEmpty()){
+            throw new RuntimeException("Not found any public and not final field in @"+MutableClassSource.class.getSimpleName()+" "+type+" and their super class");
+        }
+
+        List<String> args=new ArrayList<>(elements.size());
+        TypeMirror fieldType = elements.getFirst().asType();
+
+        elements.forEach(e->{
+            args.add(String.valueOf(e.getSimpleName()));
+            if(!e.asType().equals(fieldType))
+                throw  getCodeBlockFromMutableClassSourceMultipleTypeException(elements);
+        });
+
+        return new CompoundSourceCode(
+                TypeName.get(fieldType),
+                TypeName.get(type),
+                args.toArray(new String[0]),
+                genGetField(args),
+                genGetFieldFromDist(args),
+                genSetField(args)
+        );
+    }
+
+    public String genGetField(List<String> args){
+        String name = "compoundSource";
+        StringBuilder builder = new StringBuilder();
+        builder.append("$1T ").append(name).append(" = new $1T();\n");
+
+        int i=0;
+        for(String field:args){
+            builder.append(name).append('.').append(field)
+                    .append(" = $2N[$3L + ").append(i++).append("];\n");
+        }
+
+        builder.append("return ").append(name).append(";\n");
+
+        return builder.toString();
+    }
+
+    public String genGetFieldFromDist(List<String> args){
+        StringBuilder builder = new StringBuilder();
+
+        int i=0;
+        for(String field:args){
+            builder.append("$1N.").append(field)
+                    .append(" = $2N[$3L + ").append(i++).append("];\n");
+        }
+
+        builder.append("return $1N;\n");
+
+        return builder.toString();
+    }
+
+    public String genSetField(List<String> args){
+        StringBuilder builder = new StringBuilder();
+
+        int i=0;
+        for(String field:args){
+            builder.append("$2N[$3L + ").append(i++)
+                    .append("] = $1N.").append(field).append(";\n");
+        }
+
+        return builder.toString();
+    }
+
+
+    public RuntimeException getCodeBlockFromMutableClassSourceMultipleTypeException(List<VariableElement> elements){
+        StringBuilder error = new StringBuilder(
+                "@" + MutableClassSource.class.getSimpleName() + " fields must have the same type, but found: {\n");
+        for (VariableElement e : elements) {
+            error.append("\t").append(e.asType()).append(" ").append(e.getSimpleName()).append(";\n");
+        }
+        error.append("}");
+        return new RuntimeException(error.toString());
+    }
+
 
     // ------------------- 内部数据类 -------------------
 
-    private record FieldInfo(String name, TypeName dataType, int dataLength, TypeName filedType, String group, int constructIndex, @Nullable FieldCodeBlock code) {
+    private record FieldInfo(String name, TypeName dataType, int dataLength, TypeName filedType, String group, int constructIndex, @Nullable CompoundSourceCode code) {
     }
 
     private record GroupInfo(String name, TypeName dataType, List<FieldInfo> fields) {

@@ -28,20 +28,20 @@ public @interface Glue {
 
     /**
      * <p>F getField(int index)</p>
-     * <p>Argument: field array, (index * groupSize + offset)</p>
+     * <p>Argument: Type, array, (index * groupSize + offset)</p>
      */
     String getField() default "return new $T($N, $L);";
 
     /**
      * <p>F getField(int index, F dest)</p>
-     * <p>Argument: dest, field array, (index * groupSize + offset)</p>
+     * <p>Argument: dest, array, (index * groupSize + offset)</p>
      * @return 如果为<code>""</code>，则不生成此方法
      */
     String getFieldToDest() default "return $N.set($N, $L);";
 
     /**
      * <p>void setField(int index, F field)</p>
-     * <p>Argument: field, field array, (index * groupSize + offset)</p>
+     * <p>Argument: field, array, (index * groupSize + offset)</p>
      */
     String setField() default "$N.get($N, $L);";
 
