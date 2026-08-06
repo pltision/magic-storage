@@ -2,6 +2,7 @@ package yee.pltision.soa.processor;
 
 import cn.hutool.core.text.NamingCase;
 import com.palantir.javapoet.*;
+import yee.pltision.soa.StringUtil;
 import yee.pltision.soa.annotation.Field;
 import yee.pltision.soa.annotation.Glue;
 import yee.pltision.soa.annotation.SoA;
@@ -21,7 +22,6 @@ import javax.lang.model.type.TypeMirror;
 import javax.tools.Diagnostic;
 import java.io.IOException;
 import java.util.*;
-import java.util.stream.Collectors;
 
 
 @SupportedAnnotationTypes("yee.pltision.soa.annotation.SoA")
@@ -30,39 +30,41 @@ public class SoAProcessor extends AbstractProcessor {
 
     public static final ClassName ANNOTATION_CLASS_NAME = ClassName.get(SoA.class);
 
+    public static final String indexName="elementIndex";
+
     @Override
     public boolean process(Set<? extends TypeElement> annotations, RoundEnvironment roundEnv) {
         boolean anySuccess=false;
         for (TypeElement annotation : annotations) {
             for (Element elem : roundEnv.getElementsAnnotatedWith(annotation)) {
-                if (elem.getKind() == ElementKind.RECORD) {
-                    try {
+                try {
+                    if (elem.getKind() == ElementKind.RECORD) {
                         anySuccess |= generateStoreForRecord((TypeElement) elem);
+                    } else if (elem.getKind() == ElementKind.CLASS) {
+                        anySuccess |= generateStoreForClass((TypeElement) elem);
+                    } else {
+                        processingEnv.getMessager().printMessage(Diagnostic.Kind.ERROR,
+                                "@" + ANNOTATION_CLASS_NAME.simpleName() + " can only be used on Record or Class", elem);
                     }
-                    catch (Throwable t){
-                        processingEnv.getMessager().printMessage(Diagnostic.Kind.ERROR, t.toString());
-                        t.printStackTrace();
-                    }
-                } else if (elem.getKind() == ElementKind.CLASS) {
-                    // TODO: support class
-                } else {
-                    processingEnv.getMessager().printMessage(Diagnostic.Kind.ERROR,
-                            "@" + ANNOTATION_CLASS_NAME.simpleName() + " can only be used on Record or Class", elem);
+                }
+                catch (Throwable t){
+                    processingEnv.getMessager().printMessage(Diagnostic.Kind.ERROR, t.toString());
+                    t.printStackTrace();
                 }
             }
         }
         return anySuccess;
     }
 
-    private boolean generateStoreForRecord(TypeElement recordElem) {
-        String packageName = processingEnv.getElementUtils().getPackageOf(recordElem).getQualifiedName().toString();
-        String simpleName = recordElem.getSimpleName().toString();
+    private boolean generateStoreForRecord(TypeElement element) {
+        String packageName = processingEnv.getElementUtils().getPackageOf(element).getQualifiedName().toString();
+        String simpleName = element.getSimpleName().toString();
         String storeName = simpleName + "Store";
 
-        List<? extends RecordComponentElement> components = recordElem.getRecordComponents();
+        List<? extends RecordComponentElement> components = element.getRecordComponents();
         if (components.isEmpty()) {
             processingEnv.getMessager().printMessage(Diagnostic.Kind.WARNING,
-                    "No record components found for @" + ANNOTATION_CLASS_NAME.simpleName(), recordElem);
+                    "No record components found for @" + ANNOTATION_CLASS_NAME.simpleName(), element);
             return false;
         }
 
@@ -73,190 +75,118 @@ public class SoAProcessor extends AbstractProcessor {
 
         Optional<List<GroupSource>> groupsOpt = getGroups(
                 fieldInfosOpt.get(),
-                NamingCase.toCamelCase(simpleName)
+                StringUtil.firstLower(simpleName)
         );
         if (groupsOpt.isEmpty()) {
             return false;
         }
 
-        List<GroupSource> groups = groupsOpt.get();
-        ClassName recordClass = ClassName.get(recordElem);
+        ClassName recordClass = ClassName.get(element);
+        ClassName storeClass = ClassName.get(packageName, storeName);
 
-        return generateStore(groups, recordClass, packageName, simpleName, storeName);
+        return generateStore(
+                new ElementSource(recordClass, storeClass, ElementSource.fullConstructor(fieldInfosOpt.get()),null)
+                , groupsOpt.get(), fieldInfosOpt.get());
+    }
+
+    private boolean generateStoreForClass(TypeElement element) {
+        String packageName = processingEnv.getElementUtils().getPackageOf(element).getQualifiedName().toString();
+        String simpleName = element.getSimpleName().toString();
+        String storeName = simpleName + "Store";
+
+        List<? extends VariableElement> components = element.getEnclosedElements().stream()
+                .filter(e->e.getKind()==ElementKind.FIELD)
+                .map(e->(VariableElement) e)
+                .filter(e->
+                        e.getModifiers().contains(Modifier.PUBLIC)
+                                && ! e.getModifiers().contains(Modifier.FINAL)
+                )
+                .toList();
+
+        if (components.isEmpty()) {
+            processingEnv.getMessager().printMessage(Diagnostic.Kind.WARNING,
+                    "No public and not static field found for @" + ANNOTATION_CLASS_NAME.simpleName(), element);
+            return false;
+        }
+
+        Optional<List<FieldSource>> fieldInfosOpt = getFieldFromClass(components);
+        if (fieldInfosOpt.isEmpty()) {
+            return false;
+        }
+
+        Optional<List<GroupSource>> groupsOpt = getGroups(
+                fieldInfosOpt.get(),
+                StringUtil.firstLower(simpleName)
+        );
+        if (groupsOpt.isEmpty()) {
+            return false;
+        }
+
+        ClassName recordClass = ClassName.get(element);
+        ClassName storeClass = ClassName.get(packageName, storeName);
+
+        return generateStore(
+                new ElementSource(recordClass, storeClass, ElementSource.emptyConstructor(fieldInfosOpt.get(), storeClass),null)
+                , groupsOpt.get(), fieldInfosOpt.get());
     }
 
     // ------------------- 核心生成方法 -------------------
 
-    private boolean generateStore(List<GroupSource> groups,
-                                  ClassName recordClass,
-                                  String packageName,
-                                  String simpleName,
-                                  String storeName) {
+    private boolean generateStore(
+            ElementSource store,
+            List<GroupSource> groups,
+            List<FieldSource> fields
+    ) {
         // 构建数组
         List<GroupResult> groupSpecs = new ArrayList<>();
         for (GroupSource group : groups) {
-            String groupName = group.name();
-
-            //直接数，field和group其实相互依赖，但group可以暂时全用标量
-            int sizeCount = 0;
-            for(FieldSource field: group.fields()){
-                sizeCount+=field.dataLength();
-            }
-            TypeName elementType = group.dataType();
-            ArrayTypeName arrayType = ArrayTypeName.of(elementType);
-
-            String sizeConstName = NamingCase.toUnderlineCase(groupName).toUpperCase() + "_SIZE";
-            FieldSpec sizeConst = FieldSpec.builder(int.class, sizeConstName)
-                    .addModifiers(Modifier.PUBLIC, Modifier.STATIC, Modifier.FINAL)
-                    .initializer("$L", sizeCount)
-                    .build();
-
-            String arrayFieldName = groupName + "Array";
-            FieldSpec arrayField = FieldSpec.builder(arrayType, arrayFieldName)
-                    .addModifiers(Modifier.PUBLIC, Modifier.FINAL)
-                    .build();
-
-            groupSpecs.add(new GroupResult(groupName, elementType, sizeCount, sizeConstName, arrayFieldName, sizeConst, arrayField));
+            groupSpecs.add(GroupResult.gen(group));
         }
 
         String indexName = "elementIndex";
 
         // 构建字段 arrayGetter arraySetter() 等需要被调用的函数
-        List<FieldResult> fieldSpecsList = new ArrayList<>();
+        FieldResult[] fieldResult = new FieldResult[fields.size()];
 
         for (GroupResult gSpec : groupSpecs) {
             GroupSource groupSource = groups.stream()
                     .filter(g -> g.name().equals(gSpec.name()))
                     .findFirst()
                     .orElseThrow();
-            List<FieldSource> fields = groupSource.fields();
+            List<FieldSource> groupFields = groupSource.fields();
 
             int offset = 0;
-            for (FieldSource field : fields) {
-                String fieldName = field.name();
-                TypeName fieldType = field.filedType();
-                String capFileName = NamingCase.toPascalCase(fieldName);
-
-                String offsetConstName = NamingCase.toUnderlineCase(fieldName).toUpperCase() + "_OFFSET";
-                FieldSpec offsetField = FieldSpec.builder(int.class, offsetConstName)
-                        .addModifiers(Modifier.PUBLIC, Modifier.STATIC, Modifier.FINAL)
-                        .initializer("$L", offset)
-                        .build();
-
-
-                String sizeConstName = NamingCase.toUnderlineCase(fieldName).toUpperCase() + "_SIZE";
-                FieldSpec sizeConst = FieldSpec.builder(int.class, sizeConstName)
-                        .addModifiers(Modifier.PUBLIC, Modifier.STATIC, Modifier.FINAL)
-                        .initializer("$L", field.dataLength())
-                        .build();
-
-                // 分裂胶水和原初类型
-
-                if(field.code() ==null){
-                    // float getField(int index)
-                    MethodSpec getter = MethodSpec.methodBuilder("get" + capFileName)
-                            .addModifiers(Modifier.PUBLIC)
-                            .addParameter(int.class, indexName)
-                            .returns(fieldType)
-                            .addStatement("return $N[$N * $N + $N]",
-                                    gSpec.arrayField(), indexName, gSpec.sizeConstName(), offsetConstName)
-                            .build();
-
-                    // float setField(int index, float f)
-                    MethodSpec setter = MethodSpec.methodBuilder("set" + capFileName)
-                            .addModifiers(Modifier.PUBLIC)
-                            .addParameter(int.class, indexName)
-                            .addParameter(fieldType, fieldName)
-                            .addStatement("$N[$N * $N + $N] = $N",
-                                    gSpec.arrayField(), indexName, gSpec.sizeConstName(), offsetConstName, fieldName)
-                            .build();
-
-                    FieldResult fSpec = new FieldResult(field, offsetField, sizeConst,
-                            getter, null,
-                            setter, null
-                    );
-                    fieldSpecsList.add(fSpec);
-                }
-                else {
-
-                    // F getField(int index)
-                    MethodSpec getter = MethodSpec.methodBuilder("get" + capFileName)
-                            .addModifiers(Modifier.PUBLIC)
-                            .addParameter(int.class, indexName)
-                            .returns(fieldType)
-                            .addCode(field.code().getField(), field.filedType(), gSpec.arrayField(),
-                                    CodeBlock.of("($N * $N + $N)", indexName, gSpec.sizeField(), offsetConstName).toString())
-                            .build();
-
-                    String destName="dest";
-                    // F getField(int index, F dest)
-                    MethodSpec getWithDist = MethodSpec.methodBuilder("get" + capFileName)
-                            .addModifiers(Modifier.PUBLIC)
-                            .addParameter(int.class, indexName)
-                            .addParameter(fieldType, destName)
-                            .returns(fieldType)
-                            .addCode(field.code().getFieldToDest(), destName, gSpec.arrayField(),
-                                    CodeBlock.of("($N * $N + $N)", indexName, gSpec.sizeField(), offsetConstName).toString())
-                            .build();
-
-                    // F setField(int index, F field)
-                    MethodSpec setter = MethodSpec.methodBuilder("set" + capFileName)
-                            .addModifiers(Modifier.PUBLIC)
-                            .addParameter(int.class, indexName)
-                            .addParameter(fieldType, fieldName)
-                            .addCode(field.code().setField(),
-                                    fieldName,
-                                    gSpec.arrayField(),
-                                    CodeBlock.of("($N * $N + $N)", indexName, gSpec.sizeField(), offsetConstName).toString())
-                            .build();
-
-                    // F setField(int index, float... data)
-                    MethodSpec.Builder setByPrimitive = MethodSpec.methodBuilder("set"+capFileName)
-                            .addModifiers(Modifier.PUBLIC)
-                            .addParameter(int.class, indexName);
-
-                    String[] args = field.code().args();
-                    for(int i=0;i<args.length;i++){
-                        setByPrimitive.addParameter(field.dataType(), args[i]);
-                        setByPrimitive.addStatement("$N[$N * $N + $N + $L] = $N",
-                                gSpec.arrayField(),
-                                gSpec.sizeField(), indexName, offsetField, i,
-                                args[i]
-                        );
-                    }
-
-                    FieldResult fSpec = new FieldResult(field, offsetField, sizeConst,
-                            getter,getWithDist,
-                            setter, setByPrimitive.build()
-                    );
-                    fieldSpecsList.add(fSpec);
-                }
-
-
+            for (FieldSource field : groupFields) {
+                fieldResult[field.constructIndex()]=FieldResult.gen(gSpec,field,offset);
                 offset+=field.dataLength();
             }
         }
 
         // 构建类
-        TypeSpec.Builder classBuilder = TypeSpec.classBuilder(ClassName.get(packageName, storeName))
+        TypeSpec.Builder classBuilder = TypeSpec.classBuilder(store.storeName())
                 .addModifiers(Modifier.PUBLIC, Modifier.FINAL)
                 .addJavadoc("Generate by $T with @$N\n",
-                        ClassName.get(packageName,simpleName), ANNOTATION_CLASS_NAME.simpleName()
+                        store.elementName(), ANNOTATION_CLASS_NAME.simpleName()
                 )
                 .addJavadoc("@see $N\n", ANNOTATION_CLASS_NAME.toString())    //显示全名
-                .addJavadoc("@see $T\n", ClassName.get(packageName,simpleName))
+                .addJavadoc("@see $T\n", store.elementName())
                 ;
 
         classBuilder.addField(FieldSpec.builder(int.class, "size")
                 .addModifiers(Modifier.PUBLIC, Modifier.FINAL)
                 .build());
 
+
+        // 添加 group
+
         for (GroupResult gSpec : groupSpecs) {
             classBuilder.addField(gSpec.sizeField());
             classBuilder.addField(gSpec.arrayField());
         }
 
-        for (FieldResult fSpec : fieldSpecsList) {
+        // 添加 field
+
+        for (FieldResult fSpec : fieldResult) {
             classBuilder.addField(fSpec.offsetConst());
             classBuilder.addField(fSpec.sizeConst());
             classBuilder.addMethod(fSpec.arrayGetter());
@@ -265,25 +195,27 @@ public class SoAProcessor extends AbstractProcessor {
             if(fSpec.arraySetPrimitive()!=null) classBuilder.addMethod(fSpec.arraySetPrimitive());
         }
 
+        // 添加store
+
         // setGroup(int index, ... data)
         for (GroupResult gSpec : groupSpecs) {
             GroupSource groupSource = groups.stream()
                     .filter(g -> g.name().equals(gSpec.name()))
                     .findFirst()
                     .orElseThrow();
-            List<FieldSource> fields = groupSource.fields();
+            List<FieldSource> groupFields = groupSource.fields();
 
             MethodSpec.Builder groupSetter = MethodSpec.methodBuilder("set" + NamingCase.toPascalCase(gSpec.name()))
                     .addModifiers(Modifier.PUBLIC)
                     .addParameter(int.class, indexName);
-            for (FieldSource field : fields) {
+            for (FieldSource field : groupFields) {
                 groupSetter.addParameter(field.filedType(), field.name());
             }
             CodeBlock.Builder body = CodeBlock.builder();
-            for (FieldSource field : fields) {
+            for (FieldSource field : groupFields) {
                 //通过constructIndex获取field，其实我觉得放group里面合适，但反正能用
                 body.addStatement("$N($N, $N)",
-                        fieldSpecsList.get(field.constructIndex()).arraySetter(),
+                        fieldResult[field.constructIndex()].arraySetter(),
                         indexName, field.name()
                 );
             }
@@ -302,46 +234,15 @@ public class SoAProcessor extends AbstractProcessor {
         }
         classBuilder.addMethod(constructor.build());
 
-        // Element getElement(int index)
-        List<FieldSource> allFields = groups.stream()
-                .flatMap(g -> g.fields().stream())
-                .sorted(Comparator.comparingInt(FieldSource::constructIndex))
-                .collect(Collectors.toList());
 
-        MethodSpec.Builder getElement = MethodSpec.methodBuilder("get")
-                .addModifiers(Modifier.PUBLIC)
-                .addParameter(int.class, indexName)
-                .returns(recordClass);
-        StringBuilder getBody = new StringBuilder("return new $T(");
-        List<Object> getArgs = new ArrayList<>();
-        getArgs.add(recordClass);
-        for (int i = 0; i < allFields.size(); i++) {
-            if (i > 0) getBody.append(", ");
-            FieldSource field = allFields.get(i);
-            getBody.append("$N($N)");
-            getArgs.add(fieldSpecsList.get(field.constructIndex()).arrayGetter());
-            getArgs.add(indexName);
-        }
-        getBody.append(");");
-        getElement.addCode(getBody.toString(), getArgs.toArray());
-        classBuilder.addMethod(getElement.build());
+        ElementResult elementResult = ElementResult.gen(store,fieldResult,fields);
 
-        // void setElement(int index, E element)
-        MethodSpec.Builder setElement = MethodSpec.methodBuilder("set")
-                .addModifiers(Modifier.PUBLIC)
-                .addParameter(int.class, indexName)
-                .addParameter(recordClass, NamingCase.toCamelCase(simpleName));
-        String recordParam = NamingCase.toCamelCase(simpleName);
-        for (FieldSource field : allFields) {
-            setElement.addStatement("$N($N, $N.$N())",
-                    fieldSpecsList.get(field.constructIndex()).arraySetter(),
-                    indexName,
-                    recordParam, field.name()
-            );
-        }
-        classBuilder.addMethod(setElement.build());
+        classBuilder.addMethod(elementResult.setElement());
+        classBuilder.addMethod(elementResult.getElement());
+        if(elementResult.getElementToDest()!=null)
+            classBuilder.addMethod(elementResult.getElementToDest());
 
-        JavaFile javaFile = JavaFile.builder(packageName, classBuilder.build())
+        JavaFile javaFile = JavaFile.builder(store.storeName().packageName(), classBuilder.build())
                 .build();
         try {
             javaFile.writeTo(processingEnv.getFiler());
@@ -385,11 +286,11 @@ public class SoAProcessor extends AbstractProcessor {
         return Optional.empty();
     }
 
-    private Optional<List<FieldSource>> getFieldFromRecord(List<? extends RecordComponentElement> components) {
+    private Optional<List<FieldSource>> getFieldFromRecord(List<? extends Element> components) {
         List<FieldSource> fields = new ArrayList<>();
         int i = 0;
         boolean hasError = false;
-        for (RecordComponentElement comp : components) {
+        for (Element comp : components) {
             try {
                 String name = comp.getSimpleName().toString();
                 CompoundFieldSource fieldSource = getCodeBlockFromGlue(comp, comp.asType());
@@ -410,7 +311,50 @@ public class SoAProcessor extends AbstractProcessor {
                     dataLength = fieldSource.args().length;
                 }
                 String group = getGroupFromComponent(comp);
-                fields.add(new FieldSource(name, dataType, dataLength, fieldType, group, i, fieldSource));
+                fields.add(new FieldSource(name, "$N."+name+"()", dataType, dataLength, fieldType, group, i, fieldSource));
+                i++;
+            } catch (RuntimeException t) {   // 捕获能得出信息的异常
+                processingEnv.getMessager().printMessage(
+                        Diagnostic.Kind.ERROR,
+                        "Error processing record component '" + comp.getSimpleName() + "': " + t.getMessage(),
+                        comp
+                );
+                t.printStackTrace();
+                hasError = true;
+            }
+        }
+        if (hasError) {
+            return Optional.empty();
+        }
+        return Optional.of(fields);
+    }
+
+    private Optional<List<FieldSource>> getFieldFromClass(List<? extends Element> components) {
+        List<FieldSource> fields = new ArrayList<>();
+        int i = 0;
+        boolean hasError = false;
+        for (Element comp : components) {
+            try {
+                String name = comp.getSimpleName().toString();
+                CompoundFieldSource fieldSource = getCodeBlockFromGlue(comp, comp.asType());
+                if (fieldSource == null) {
+                    fieldSource = getCodeBlockFromMutableClassSource(comp.asType());
+                }
+                TypeName dataType;
+                int dataLength;
+                TypeName fieldType;
+                if (fieldSource == null) {
+                    dataType = TypeName.get(comp.asType());
+                    fieldType = dataType;
+                    dataLength = 1;
+                } else {
+                    dataType = fieldSource.dataType();
+                    fieldType = fieldSource.fliedType();
+                    //args就是标量
+                    dataLength = fieldSource.args().length;
+                }
+                String group = getGroupFromComponent(comp);
+                fields.add(new FieldSource(name, "$N."+name, dataType, dataLength, fieldType, group, i, fieldSource));
                 i++;
             } catch (RuntimeException t) {   // 捕获能得出信息的异常
                 processingEnv.getMessager().printMessage(
@@ -479,7 +423,7 @@ public class SoAProcessor extends AbstractProcessor {
                 String key = entry.getKey().getSimpleName().toString();
                 if ("targetType".equals(key)) {
                     targetType = (TypeMirror) entry.getValue().getValue();
-                } else if ("dataType()".equals(key)) {
+                } else if ("dataType".equals(key)) {
                     dataType = (TypeMirror) entry.getValue().getValue();
                 }
             }

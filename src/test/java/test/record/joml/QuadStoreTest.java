@@ -23,7 +23,7 @@ class QuadStoreTest {
     void testArraySize() {
         QuadStore store = new QuadStore(3);
         assertEquals(3, store.size);
-        assertEquals(72, store.QuadArray.length); // 3 * 24
+        assertEquals(72, store.quadArray.length); // 3 * 24
     }
 
     @Test

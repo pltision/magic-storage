@@ -19,7 +19,7 @@ class SimpleStoreTest {
     void testArraySize() {
         SimpleStore store = new SimpleStore(5);
         assertEquals(5, store.size);
-        assertEquals(10, store.SimpleArray.length); // 5 * SIMPLE_SIZE(2)
+        assertEquals(10, store.simpleArray.length); // 5 * SIMPLE_SIZE(2)
     }
 
     @Test
