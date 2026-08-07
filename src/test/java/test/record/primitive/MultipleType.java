@@ -1,9 +1,9 @@
 package test.record.primitive;
 
-import yee.pltision.soa.annotation.Field;
-import yee.pltision.soa.annotation.SoA;
+import yee.pltision.magicstorage.annotation.Field;
+import yee.pltision.magicstorage.annotation.GenStore;
 
-@SoA
+@GenStore
 public record MultipleType(
         @Field(group = "f") float a,
         @Field(group = "f") float b,

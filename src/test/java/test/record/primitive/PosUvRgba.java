@@ -1,9 +1,9 @@
 package test.record.primitive;
 
-import yee.pltision.soa.annotation.Field;
-import yee.pltision.soa.annotation.SoA;
+import yee.pltision.magicstorage.annotation.Field;
+import yee.pltision.magicstorage.annotation.GenStore;
 
-@SoA
+@GenStore
 public record PosUvRgba(
         @Field(group = "pos") float x,
         @Field(group = "pos") float y,

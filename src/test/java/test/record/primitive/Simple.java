@@ -1,8 +1,8 @@
 package test.record.primitive;
 
-import yee.pltision.soa.annotation.SoA;
+import yee.pltision.magicstorage.annotation.GenStore;
 
-@SoA
+@GenStore
 public record Simple(
         float a,
         float b

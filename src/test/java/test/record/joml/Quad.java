@@ -2,10 +2,10 @@ package test.record.joml;
 
 import org.joml.Matrix4f;
 import org.joml.Vector4f;
-import yee.pltision.soa.annotation.Joml;
-import yee.pltision.soa.annotation.SoA;
+import yee.pltision.magicstorage.annotation.GenStore;
+import yee.pltision.magicstorage.annotation.Joml;
 
-@SoA
+@GenStore
 public record Quad (
      @Joml Matrix4f transform,
      @Joml Vector4f texCrood,
