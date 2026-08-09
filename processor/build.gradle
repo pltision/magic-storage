@@ -3,7 +3,7 @@ plugins {
 }
 
 group = 'yee.pltision'
-version = '1.0-SNAPSHOT'
+version = project.findProperty('releaseVersion') ?: '1.0-SNAPSHOT'
 
 repositories {
     mavenCentral()
@@ -21,4 +21,13 @@ dependencies {
     // 字符串处理，不会传递依赖
     implementation 'cn.hutool:hutool-all:5.8.47'
 
+}
+
+// 生成 yee.pltision.magicstorage.annotation.Joml（该文件在 .gitignore 中，构建前需重新生成）
+tasks.register('generateJoml', JavaExec) {
+    group = 'build'
+    description = 'Runs JomlGlueGenerator to (re)generate yee.pltision.magicstorage.annotation.Joml'
+    classpath = sourceSets.main.runtimeClasspath
+    mainClass = 'yee.pltision.magicstorage.joml.JomlGlueGenerator'
+    workingDir = rootDir
 }
