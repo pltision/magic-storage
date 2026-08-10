@@ -1,6 +1,6 @@
 # Magic Storage
 
-只要在类或 record 上标注 `@GenStore`，注解处理器就会在编译期生成一个对应的 `XxxStore` 类。该类将每个元素拆解为原始类型数组，并提供类型安全的读写方法。生成的数组均为 `public final` 字段，可以直接用于 GPU 缓冲区、NIO 的 `ByteBuffer` / `FloatBuffer`，或任何需要原始数组的代码。
+Magic Storage 是一个生成样板代码的注解处理器。只要在类或 record 上标注 `@GenStore`，注解处理器就会在编译期生成一个对应的 `XxxStore` 类。该类将每个元素拆解为原始类型数组，并提供类型安全的读写方法。生成的数组均为 `public final` 字段，可以直接用于 GPU 缓冲区、NIO 的 `ByteBuffer` / `FloatBuffer`，或任何需要原始数组的代码。
 
 ## 特性
 
@@ -12,14 +12,21 @@
 
 ## 快速开始
 
+当前版本尚未发布到 Maven Central，可通过 JitPack 使用。在 `build.gradle` 中加入仓库与依赖，`VERSION` 替换为 GitHub 上的发布 tag（例如 `v0.1`）：
+
 ```gradle
+repositories {
+    mavenCentral()
+    maven { url 'https://jitpack.io' }
+}
+
 dependencies {
-    implementation 'yee.pltision:magic-storage:1.0-SNAPSHOT'
-    annotationProcessor 'yee.pltision:magic-storage:1.0-SNAPSHOT'
+    implementation 'com.github.pltision.magic-storage:processor:VERSION'
+    annotationProcessor 'com.github.pltision.magic-storage:processor:VERSION'
 }
 ```
 
-然后在类或 record 上标注 `@GenStore` 即可。
+首次解析依赖时，JitPack 会使用该 tag 自动构建并缓存。然后在类或 record 上标注 `@GenStore` 即可。
 
 ## 基本用法
 
