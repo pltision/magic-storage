@@ -1,3 +1,7 @@
+/*
+ * This Source Code Form is subject to the terms of the Mozilla Public License, v. 2.0.
+ * If a copy of the MPL was not distributed with this file, You can obtain one at https://mozilla.org/MPL/2.0/.
+ */
 package yee.pltision;
 
 //TIP 要<b>运行</b>代码，请按 <shortcut actionId="Run"/> 或
