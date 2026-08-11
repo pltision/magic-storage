@@ -15,14 +15,16 @@ Magic Storage 是一个生成样板代码的注解处理器。只要在类或 re
 当前版本尚未发布到 Maven Central，可通过 JitPack 使用。在 `build.gradle` 中加入仓库与依赖，`VERSION` 替换为 GitHub 上的发布 tag（例如 `0.1`）：
 
 ```gradle
+project.ext.versionMagicStorage = "VERSION"
+
 repositories {
     mavenCentral()
     maven { url 'https://jitpack.io' }
 }
 
 dependencies {
-    implementation 'com.github.pltision.magic-storage:processor:VERSION'
-    annotationProcessor 'com.github.pltision.magic-storage:processor:VERSION'
+    implementation "com.github.pltision.magic-storage:processor:${versionMagicStorage}"
+    annotationProcessor "com.github.pltision.magic-storage:processor:${versionMagicStorage}"
 }
 ```
 

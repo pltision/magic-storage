@@ -15,9 +15,9 @@ dependencies {
     implementation 'com.palantir.javapoet:javapoet:0.17.0'
 
     // 可选的Accessor
-    implementation "org.joml:joml:${jomlVersion}"
+    implementation "org.joml:joml:${versionJoml}"
 
-    compileOnly "org.jetbrains:annotations:${annotationsVersion}"
+    compileOnly "org.jetbrains:annotations:${versionAnnotations}"
 
     // 字符串处理，不会传递依赖
     implementation 'cn.hutool:hutool-all:5.8.47'

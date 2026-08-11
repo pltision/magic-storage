@@ -9,8 +9,8 @@ repositories {
     mavenCentral()
 }
 
-project.ext.jomlVersion = "1.10.9"
-project.ext.annotationsVersion = "24.0.1"
+project.ext.versionJoml = "1.10.9"
+project.ext.versionAnnotations = "24.0.1"
 
 dependencies {
     implementation project(':processor')
@@ -23,11 +23,11 @@ dependencies {
     testRuntimeOnly 'org.junit.platform:junit-platform-launcher'
 
     // 测试使用
-    implementation "org.joml:joml:${jomlVersion}"
+    implementation "org.joml:joml:${versionJoml}"
 
     // 生成代码时使用
     implementation 'com.palantir.javapoet:javapoet:0.17.0'
-    implementation "org.joml:joml:${jomlVersion}"
+    implementation "org.joml:joml:${versionJoml}"
 
 }
 
