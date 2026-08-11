@@ -4,9 +4,9 @@
  */
 package yee.pltision.magicstorage.processor.step.src;
 
-import cn.hutool.core.text.NamingCase;
 import com.palantir.javapoet.ClassName;
 import org.jetbrains.annotations.Nullable;
+import yee.pltision.magicstorage.StringUtil;
 
 import java.util.Iterator;
 import java.util.List;
@@ -48,7 +48,7 @@ public record ElementSource(
     public static String emptyConstructor(List<FieldSource> fields, ClassName storeName) {
         StringBuilder builder=new StringBuilder();
 
-        String name = NamingCase.toCamelCase(storeName.simpleName());
+        String name = StringUtil.firstLower(storeName.simpleName());
 
         builder.append("$1T ").append(name).append("= new $1T();\n");
 

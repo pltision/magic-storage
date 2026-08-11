@@ -15,16 +15,16 @@ Magic Storage 是一个生成样板代码的注解处理器。只要在类或 re
 当前版本尚未发布到 Maven Central，可通过 JitPack 使用。在 `build.gradle` 中加入仓库与依赖，`VERSION` 替换为 GitHub 上的发布 tag（例如 `0.1`）：
 
 ```gradle
-project.ext.versionMagicStorage = "VERSION"
-
 repositories {
     mavenCentral()
     maven { url 'https://jitpack.io' }
 }
 
+project.ext.versionMagicStorage = "VERSION"
+
 dependencies {
-    implementation "com.github.pltision.magic-storage:processor:${versionMagicStorage}"
-    annotationProcessor "com.github.pltision.magic-storage:processor:${versionMagicStorage}"
+    implementation 'com.github.pltision:magic-storage:${versionMagicStorage}'
+    annotationProcessor 'com.github.pltision:magic-storage:${versionMagicStorage}'
 }
 ```
 
@@ -58,11 +58,177 @@ public class Sprite {
     @Field(group = "i")
     public int alpha;
 }
+
+@GenStore
+@MutableClassSource
+public class Vector {
+  public float x,y,z;
+}
 ```
 
 ### 生成的内容
 
 以 `Vertex` 为例会生成 `VertexStore`：
+
+<details>
+
+<summary>VertexStore </summary>
+
+```java
+package test.record.primitive;
+
+/**
+ * Generate by Vertex with @GenStore
+ * @see yee.pltision.magicstorage.annotation.GenStore
+ * @see Vertex
+ */
+public final class VertexStore {
+  public static final int VERTEX_SIZE = 3;
+
+  public static final int RGBA_SIZE = 4;
+
+  public static final int X_OFFSET = 0;
+
+  public static final int X_SIZE = 1;
+
+  public static final int Y_OFFSET = 1;
+
+  public static final int Y_SIZE = 1;
+
+  public static final int Z_OFFSET = 2;
+
+  public static final int Z_SIZE = 1;
+
+  public static final int R_OFFSET = 0;
+
+  public static final int R_SIZE = 1;
+
+  public static final int G_OFFSET = 1;
+
+  public static final int G_SIZE = 1;
+
+  public static final int B_OFFSET = 2;
+
+  public static final int B_SIZE = 1;
+
+  public static final int A_OFFSET = 3;
+
+  public static final int A_SIZE = 1;
+
+  public final int size;
+
+  public final float[] vertexArray;
+
+  public final float[] rgbaArray;
+
+  public VertexStore(int size) {
+    this.size = size;
+    this.vertexArray = new float[size * VERTEX_SIZE];
+    this.rgbaArray = new float[size * RGBA_SIZE];
+  }
+
+  public float getX(int elementIndex) {
+    return vertexArray[elementIndex * VERTEX_SIZE + X_OFFSET];
+  }
+
+  public void setX(int elementIndex, float x) {
+    vertexArray[elementIndex * VERTEX_SIZE + X_OFFSET] = x;
+  }
+
+  public float getY(int elementIndex) {
+    return vertexArray[elementIndex * VERTEX_SIZE + Y_OFFSET];
+  }
+
+  public void setY(int elementIndex, float y) {
+    vertexArray[elementIndex * VERTEX_SIZE + Y_OFFSET] = y;
+  }
+
+  public float getZ(int elementIndex) {
+    return vertexArray[elementIndex * VERTEX_SIZE + Z_OFFSET];
+  }
+
+  public void setZ(int elementIndex, float z) {
+    vertexArray[elementIndex * VERTEX_SIZE + Z_OFFSET] = z;
+  }
+
+  public float getR(int elementIndex) {
+    return rgbaArray[elementIndex * RGBA_SIZE + R_OFFSET];
+  }
+
+  public void setR(int elementIndex, float r) {
+    rgbaArray[elementIndex * RGBA_SIZE + R_OFFSET] = r;
+  }
+
+  public float getG(int elementIndex) {
+    return rgbaArray[elementIndex * RGBA_SIZE + G_OFFSET];
+  }
+
+  public void setG(int elementIndex, float g) {
+    rgbaArray[elementIndex * RGBA_SIZE + G_OFFSET] = g;
+  }
+
+  public float getB(int elementIndex) {
+    return rgbaArray[elementIndex * RGBA_SIZE + B_OFFSET];
+  }
+
+  public void setB(int elementIndex, float b) {
+    rgbaArray[elementIndex * RGBA_SIZE + B_OFFSET] = b;
+  }
+
+  public float getA(int elementIndex) {
+    return rgbaArray[elementIndex * RGBA_SIZE + A_OFFSET];
+  }
+
+  public void setA(int elementIndex, float a) {
+    rgbaArray[elementIndex * RGBA_SIZE + A_OFFSET] = a;
+  }
+
+  public void setVertex(int elementIndex, float x, float y, float z) {
+    setX(elementIndex, x);
+    setY(elementIndex, y);
+    setZ(elementIndex, z);
+  }
+
+  public void setRgba(int elementIndex, float r, float g, float b, float a) {
+    setR(elementIndex, r);
+    setG(elementIndex, g);
+    setB(elementIndex, b);
+    setA(elementIndex, a);
+  }
+
+  public void set(int elementIndex, Vertex vertex) {
+    setX(elementIndex, vertex.x());
+    setY(elementIndex, vertex.y());
+    setZ(elementIndex, vertex.z());
+    setR(elementIndex, vertex.r());
+    setG(elementIndex, vertex.g());
+    setB(elementIndex, vertex.b());
+    setA(elementIndex, vertex.a());
+  }
+
+  public Vertex get(int elementIndex) {
+    return new Vertex(getX(elementIndex), getY(elementIndex), getZ(elementIndex), getR(elementIndex), getG(elementIndex), getB(elementIndex), getA(elementIndex));
+  }
+}
+
+```
+
+</details>
+
+生成的 `XxxStore` 具体包含：
+
+| 成员 | 说明 |
+| --- | --- |
+| `public final int size` | 元素数量 |
+| `public static final int XXX_SIZE` | 组大小（组内标量个数） |
+| `public static final int FIELD_OFFSET` / `FIELD_SIZE` | 每个字段在组内的偏移 / 尺寸 |
+| `public final <T>[] xxxArray` | 每组一条的原始类型数组 |
+| `getField(i)` / `setField(i, v)` | 字段读写 |
+| `getField(i, dest)` / `setField(i, x, y, ...)` | 复合类型的写入到目标对象 / 按标量写入 |
+| `setXxx(i, ...)` | 整组写入 |
+| `set(i, element)` / `get(i)` | 对象级读写 |
+
+使用方法：
 
 ```java
 VertexStore store = new VertexStore(100);   // 容量 100
@@ -88,19 +254,6 @@ store.setVertex(0, 1.0f, 2.0f, 3.0f);
 store.set(0, new Vertex(1.0f, 2.0f, 3.0f, 1, 1, 1, 1));
 Vertex v = store.get(0);
 ```
-
-生成的 `XxxStore` 具体包含：
-
-| 成员 | 说明 |
-| --- | --- |
-| `public final int size` | 元素数量 |
-| `public static final int XXX_SIZE` | 组大小（组内标量个数） |
-| `public static final int FIELD_OFFSET` / `FIELD_SIZE` | 每个字段在组内的偏移 / 尺寸 |
-| `public final <T>[] xxxArray` | 每组一条的原始类型数组 |
-| `getField(i)` / `setField(i, v)` | 字段读写 |
-| `getField(i, dest)` / `setField(i, x, y, ...)` | 复合类型的写入到目标对象 / 按标量写入 |
-| `setXxx(i, ...)` | 整组写入 |
-| `set(i, element)` / `get(i)` | 对象级读写 |
 
 ## 分组
 
