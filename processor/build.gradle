@@ -1,5 +1,6 @@
 plugins {
     id 'java-library'
+    id 'maven-publish'
 }
 
 group = 'yee.pltision'
@@ -30,4 +31,13 @@ tasks.register('generateJoml', JavaExec) {
     classpath = sourceSets.main.runtimeClasspath
     mainClass = 'yee.pltision.magicstorage.joml.JomlGlueGenerator'
     workingDir = rootDir
+}
+
+publishing {
+    publications {
+        mavenJava(MavenPublication) {
+            from components.java
+            artifactId = 'processor'
+        }
+    }
 }

@@ -1,0 +1,6 @@
+jdk:
+  - openjdk21
+before_install:
+  - sh gradlew :processor:generateJoml --no-daemon
+install:
+  - sh gradlew build -x test publishToMavenLocal --no-daemon -PreleaseVersion=$VERSION

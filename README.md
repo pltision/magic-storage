@@ -8,11 +8,11 @@ Magic Storage 是一个生成样板代码的注解处理器。只要在类或 re
 - **支持 Record 和普通类**：record 使用规范构造函数 + 访问器；普通类要求字段全部为 `public` 且非 `final`、非 `static`。
 - **复合类型拆解**：支持把 JOML 的 `Vector` / `Matrix` / `Quaternion` 等类型拆成标量数组（`@Joml` / `@Glue`），也支持把自定义的 `@MutableClassSource` 类拆成数组。
 - **自定义分组**：通过 `@Field(group = "...")` 把字段分配到不同的数组，可分别传输到多个 VBO 。
-- **零运行时依赖**：在编译时生成 Java 代码，不依赖运行时反射。在运行时可以不依赖本库。
+- **零运行时依赖**：在编译时生成 Java 代码，不使用运行时反射，在运行时可不依赖本库。
 
 ## 快速开始
 
-当前版本尚未发布到 Maven Central，可通过 JitPack 使用。在 `build.gradle` 中加入仓库与依赖，`VERSION` 替换为 GitHub 上的发布 tag（例如 `v0.1`）：
+当前版本尚未发布到 Maven Central，可通过 JitPack 使用。在 `build.gradle` 中加入仓库与依赖，`VERSION` 替换为 GitHub 上的发布 tag（例如 `0.1`）：
 
 ```gradle
 repositories {

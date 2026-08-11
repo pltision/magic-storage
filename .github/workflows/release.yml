@@ -3,7 +3,7 @@ name: Release
 on:
   push:
     tags:
-      - 'v*'
+      - '*'
 
 permissions:
   contents: write
@@ -28,7 +28,7 @@ jobs:
         run: bash gradlew :processor:generateJoml --no-daemon
 
       - name: Build and test
-        run: bash gradlew build --no-daemon -PreleaseVersion=${GITHUB_REF_NAME#v}
+        run: bash gradlew build --no-daemon -PreleaseVersion=${GITHUB_REF_NAME}
 
       - name: Publish GitHub Release
         uses: softprops/action-gh-release@v2
