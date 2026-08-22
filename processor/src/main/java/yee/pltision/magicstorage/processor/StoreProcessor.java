@@ -176,9 +176,11 @@ public class StoreProcessor extends AbstractProcessor {
                 .addJavadoc("@see $T\n", store.elementName())
                 ;
 
-        classBuilder.addField(FieldSpec.builder(int.class, "size")
+        FieldSpec sizeField=FieldSpec.builder(int.class, "size")
                 .addModifiers(Modifier.PUBLIC, Modifier.FINAL)
-                .build());
+                .build();
+
+        classBuilder.addField(sizeField);
 
 
         // 添加 group
@@ -231,7 +233,7 @@ public class StoreProcessor extends AbstractProcessor {
         MethodSpec.Builder constructor = MethodSpec.constructorBuilder()
                 .addModifiers(Modifier.PUBLIC)
                 .addParameter(int.class, "size")
-                .addStatement("this.size = size");
+                .addStatement("this.$N = size",sizeField);
         for (GroupResult gSpec : groupSpecs) {
             constructor.addStatement("this.$N = new $T[size * $N]",
                     gSpec.arrayField(), gSpec.elementType(), gSpec.sizeConstName());
@@ -239,12 +241,68 @@ public class StoreProcessor extends AbstractProcessor {
         classBuilder.addMethod(constructor.build());
 
 
+        //Element
+
         ElementResult elementResult = ElementResult.gen(store,fieldResult,fields);
 
         classBuilder.addMethod(elementResult.setElement());
         classBuilder.addMethod(elementResult.getElement());
         if(elementResult.getElementToDest()!=null)
             classBuilder.addMethod(elementResult.getElementToDest());
+
+        // 实现 AbstractList
+
+        //懒得写一个内部类了，甚至不如这个直观
+        MethodSpec toList=MethodSpec.methodBuilder("toList")
+                .addJavadoc(
+                        "把数组存储当成一个定长列表来用。\n"+
+                        "@returns 定长列表，推荐作为只调用 set 的消费者使用。"
+                )
+                .addModifiers(Modifier.PUBLIC)
+                .returns(ParameterizedTypeName.get(
+                        ClassName.get(List.class),
+                        store.elementName()
+                ))
+                .addCode(
+"""
+return new $1T<$2T>(){
+    @$4T
+    public $2T get(int i){
+        return $3T.this.get(i);
+    }
+    
+    @$4T
+    public $2T set(int i, $2T element){
+        $2T p = get(i);
+        $3T.this.set(i, element);
+        return p;
+    }
+    
+    @$4T
+    public int size(){
+        return $3T.this.$5N;
+    }
+};
+""",
+                        AbstractList.class,
+                        store.elementName(),
+                        store.storeName(),
+                        Override.class,
+                        sizeField
+                )
+                .build();
+
+        classBuilder.addMethod(toList);
+
+        /*
+        classBuilder.addMethod(
+                MethodSpec.methodBuilder("size")
+                        .addModifiers(Modifier.PUBLIC)
+                        .returns(TypeName.INT)
+                        .addStatement("return $N", sizeField)
+                        .build()
+        );
+        */
 
         JavaFile javaFile = JavaFile.builder(store.storeName().packageName(), classBuilder.build())
                 .build();
