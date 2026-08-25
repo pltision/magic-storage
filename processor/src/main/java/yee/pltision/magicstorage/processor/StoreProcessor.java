@@ -142,9 +142,9 @@ public class StoreProcessor extends AbstractProcessor {
             List<FieldSource> fields
     ) {
         // 构建数组
-        List<GroupResult> groupResults = new ArrayList<>();
+        List<GroupResult> groupSpecs = new ArrayList<>();
         for (GroupSource group : groups) {
-            groupResults.add(GroupResult.gen(group));
+            groupSpecs.add(GroupResult.gen(group));
         }
 
         String indexName = "elementIndex";
@@ -152,7 +152,7 @@ public class StoreProcessor extends AbstractProcessor {
         // 构建字段 arrayGetter arraySetter() 等需要被调用的函数
         FieldResult[] fieldResult = new FieldResult[fields.size()];
 
-        for (GroupResult gSpec : groupResults) {
+        for (GroupResult gSpec : groupSpecs) {
             GroupSource groupSource = groups.stream()
                     .filter(g -> g.name().equals(gSpec.name()))
                     .findFirst()
@@ -185,7 +185,7 @@ public class StoreProcessor extends AbstractProcessor {
 
         // 添加 group
 
-        for (GroupResult gSpec : groupResults) {
+        for (GroupResult gSpec : groupSpecs) {
             classBuilder.addField(gSpec.sizeField());
             classBuilder.addField(gSpec.arrayField());
         }
@@ -204,19 +204,14 @@ public class StoreProcessor extends AbstractProcessor {
         // 添加store
 
         // setGroup(int index, ... data)
-        for (GroupResult groupResult : groupResults) {
-
-            // 跳过与 field 重名的 group
-            if(!groupResult.genGroupAccessors())
-                continue;
-
+        for (GroupResult gSpec : groupSpecs) {
             GroupSource groupSource = groups.stream()
-                    .filter(g -> g.name().equals(groupResult.name()))
+                    .filter(g -> g.name().equals(gSpec.name()))
                     .findFirst()
                     .orElseThrow();
             List<FieldSource> groupFields = groupSource.fields();
 
-            MethodSpec.Builder groupSetter = MethodSpec.methodBuilder("set" + NamingCase.toPascalCase(groupResult.name()))
+            MethodSpec.Builder groupSetter = MethodSpec.methodBuilder("set" + NamingCase.toPascalCase(gSpec.name()))
                     .addModifiers(Modifier.PUBLIC)
                     .addParameter(int.class, indexName);
             for (FieldSource field : groupFields) {
@@ -239,7 +234,7 @@ public class StoreProcessor extends AbstractProcessor {
                 .addModifiers(Modifier.PUBLIC)
                 .addParameter(int.class, "size")
                 .addStatement("this.$N = size",sizeField);
-        for (GroupResult gSpec : groupResults) {
+        for (GroupResult gSpec : groupSpecs) {
             constructor.addStatement("this.$N = new $T[size * $N]",
                     gSpec.arrayField(), gSpec.elementType(), gSpec.sizeConstName());
         }
@@ -330,7 +325,7 @@ return new $1T<$2T>(){
         for (FieldSource field : fieldInfos) {
             String groupName = field.group().isEmpty() ? defaultGroup : field.group();
             GroupSource group = groupMap.computeIfAbsent(groupName,
-                    g -> new GroupSource(g, field.dataType(), new ArrayList<>(), !hasSameNameInFields(g, fieldInfos)));
+                    g -> new GroupSource(g, field.dataType(), new ArrayList<>()));
             if (!group.dataType().equals(field.dataType())) {
                 multipleTypeGroups.add(group);
             }
@@ -351,14 +346,6 @@ return new $1T<$2T>(){
             processingEnv.getMessager().printMessage(Diagnostic.Kind.ERROR, error.toString());
         }
         return Optional.empty();
-    }
-
-    public boolean hasSameNameInFields(String groupName, List<FieldSource> fieldSources){
-        for(FieldSource f: fieldSources){
-            if(groupName.equals(f.name()))
-                return true;
-        }
-        return false;
     }
 
     private Optional<List<FieldSource>> getFieldFromRecord(List<? extends Element> components) {
