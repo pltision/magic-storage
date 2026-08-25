@@ -21,19 +21,19 @@ public record FieldResult(String name, FieldSpec offsetConst, FieldSpec sizeCons
                           MethodSpec arraySetter, @Nullable MethodSpec arraySetPrimitive
 ) {
 
-    public static FieldResult gen(GroupResult group, FieldSource field, int offset){
+    public static FieldResult gen(GroupResult group, FieldSource field, int offset) {
         String fieldName = field.name();
         TypeName fieldType = field.filedType();
         String capFileName = NamingCase.toPascalCase(fieldName);
 
-        String offsetConstName = NamingCase.toUnderlineCase(fieldName).toUpperCase() + "_OFFSET";
+        String offsetConstName = "OFFSET_" + NamingCase.toUnderlineCase(fieldName).toUpperCase();
         FieldSpec offsetField = FieldSpec.builder(int.class, offsetConstName)
                 .addModifiers(Modifier.PUBLIC, Modifier.STATIC, Modifier.FINAL)
                 .initializer("$L", offset)
                 .build();
 
 
-        String sizeConstName = NamingCase.toUnderlineCase(fieldName).toUpperCase() + "_SIZE";
+        String sizeConstName = "SIZE_" + NamingCase.toUnderlineCase(fieldName).toUpperCase();
         FieldSpec sizeConst = FieldSpec.builder(int.class, sizeConstName)
                 .addModifiers(Modifier.PUBLIC, Modifier.STATIC, Modifier.FINAL)
                 .initializer("$L", field.dataLength())
@@ -41,7 +41,7 @@ public record FieldResult(String name, FieldSpec offsetConst, FieldSpec sizeCons
 
         // 分裂胶水和原初类型
 
-        if(field.code() ==null){
+        if (field.code() == null) {
             // float getField(int index)
             MethodSpec getter = MethodSpec.methodBuilder("get" + capFileName)
                     .addModifiers(Modifier.PUBLIC)
@@ -64,8 +64,7 @@ public record FieldResult(String name, FieldSpec offsetConst, FieldSpec sizeCons
                     getter, null,
                     setter, null
             );
-        }
-        else {
+        } else {
 
             // F getField(int index)
             MethodSpec getter = MethodSpec.methodBuilder("get" + capFileName)
@@ -76,7 +75,7 @@ public record FieldResult(String name, FieldSpec offsetConst, FieldSpec sizeCons
                             CodeBlock.of("($N * $N + $N)", indexName, group.sizeField(), offsetConstName).toString())
                     .build();
 
-            String destName="dest";
+            String destName = "dest";
             // F getField(int index, F dest)
             MethodSpec getWithDist = MethodSpec.methodBuilder("get" + capFileName)
                     .addModifiers(Modifier.PUBLIC)
@@ -99,12 +98,12 @@ public record FieldResult(String name, FieldSpec offsetConst, FieldSpec sizeCons
                     .build();
 
             // F setField(int index, float... data)
-            MethodSpec.Builder setByPrimitive = MethodSpec.methodBuilder("set"+capFileName)
+            MethodSpec.Builder setByPrimitive = MethodSpec.methodBuilder("set" + capFileName)
                     .addModifiers(Modifier.PUBLIC)
                     .addParameter(int.class, indexName);
 
             String[] args = field.code().args();
-            for(int i=0;i<args.length;i++){
+            for (int i = 0; i < args.length; i++) {
                 setByPrimitive.addParameter(field.dataType(), args[i]);
                 setByPrimitive.addStatement("$N[$N * $N + $N + $L] = $N",
                         group.arrayField(),
@@ -114,7 +113,7 @@ public record FieldResult(String name, FieldSpec offsetConst, FieldSpec sizeCons
             }
 
             return new FieldResult(field.name(), offsetField, sizeConst,
-                    getter,getWithDist,
+                    getter, getWithDist,
                     setter, setByPrimitive.build()
             );
         }

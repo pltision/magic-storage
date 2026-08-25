@@ -14,21 +14,21 @@ import yee.pltision.magicstorage.processor.step.src.GroupSource;
 import javax.lang.model.element.Modifier;
 
 public record GroupResult(String name, TypeName elementType, int fieldCount,
-                   String sizeConstName, String arrayFieldName,
-                   FieldSpec sizeField, FieldSpec arrayField) {
+                          String sizeConstName, String arrayFieldName,
+                          FieldSpec sizeField, FieldSpec arrayField) {
 
-    public static GroupResult gen(GroupSource group){
+    public static GroupResult gen(GroupSource group) {
         String groupName = group.name();
 
         //直接数，field和group其实相互依赖，但group可以暂时全用标量
         int sizeCount = 0;
-        for(FieldSource field: group.fields()){
-            sizeCount+=field.dataLength();
+        for (FieldSource field : group.fields()) {
+            sizeCount += field.dataLength();
         }
         TypeName elementType = group.dataType();
         ArrayTypeName arrayType = ArrayTypeName.of(elementType);
 
-        String sizeConstName = NamingCase.toUnderlineCase(groupName).toUpperCase() + "_SIZE";
+        String sizeConstName = "SIZE_GROUP_" + NamingCase.toUnderlineCase(groupName).toUpperCase();
         FieldSpec sizeConst = FieldSpec.builder(int.class, sizeConstName)
                 .addModifiers(Modifier.PUBLIC, Modifier.STATIC, Modifier.FINAL)
                 .initializer("$L", sizeCount)
