@@ -8,5 +8,5 @@ import com.palantir.javapoet.TypeName;
 
 import java.util.List;
 
-public record GroupSource(String name, TypeName dataType, List<FieldSource> fields) {
+public record GroupSource(String name, TypeName dataType, List<FieldSource> fields, boolean genGroupAccessors) {
 }

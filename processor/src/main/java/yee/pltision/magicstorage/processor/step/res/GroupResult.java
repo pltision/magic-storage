@@ -15,7 +15,7 @@ import javax.lang.model.element.Modifier;
 
 public record GroupResult(String name, TypeName elementType, int fieldCount,
                           String sizeConstName, String arrayFieldName,
-                          FieldSpec sizeField, FieldSpec arrayField) {
+                          FieldSpec sizeField, FieldSpec arrayField, boolean genGroupAccessors) {
 
     public static GroupResult gen(GroupSource group) {
         String groupName = group.name();
@@ -39,6 +39,6 @@ public record GroupResult(String name, TypeName elementType, int fieldCount,
                 .addModifiers(Modifier.PUBLIC, Modifier.FINAL)
                 .build();
 
-        return new GroupResult(groupName, elementType, sizeCount, sizeConstName, arrayFieldName, sizeConst, arrayField);
+        return new GroupResult(groupName, elementType, sizeCount, sizeConstName, arrayFieldName, sizeConst, arrayField, group.genGroupAccessors());
     }
 }
